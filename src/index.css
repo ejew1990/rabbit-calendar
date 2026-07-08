@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Quicksand", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  
+  /* Custom colors matching the design template */
+  --color-bunny-bg: #FFF9F2;
+  --color-bunny-pink: #FF91A4;
+  --color-bunny-pink-light: #FFC1CC;
+  --color-bunny-brown: #6B4F4F;
+  --color-bunny-brown-light: #A68F8F;
+  --color-bunny-yellow: #FFEC8B;
+  --color-bunny-blue: #A0D8EF;
+  --color-bunny-green: #B2E7D5;
+  
+  --shadow-cute: 0 4px 0 0 #F2D7CC;
+}
+
+/* Custom scrollbar and cute utilities */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 249, 242, 0.5);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb {
+  background: #FFC1CC;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF91A4;
+}
+
+/* Bouncy animations */
+@keyframes bunny-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(0.98); }
+}
+
+@keyframes ear-twitch {
+  0%, 90%, 100% { transform: rotate(0deg); }
+  93% { transform: rotate(-5deg); }
+  96% { transform: rotate(5deg); }
+}
+
+.animate-bunny {
+  animation: bunny-bounce 3s ease-in-out infinite;
+}
+
+.animate-ear-twitch {
+  animation: ear-twitch 6s ease-in-out infinite;
+}
