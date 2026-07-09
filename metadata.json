@@ -1,0 +1,6 @@
+{
+  "name": "兔兔家庭日历",
+  "description": "一个活泼可爱的兔兔主题家庭日历与共享待办事项应用。支持多角色实时同步日程、事件提醒以及家庭任务管理。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

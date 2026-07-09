@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FamilyMember } from '../types';
-import { Plus, Trash, UserPlus } from 'lucide-react';
+import { Plus, Trash, Edit, UserPlus } from 'lucide-react';
 import Modal from './Modal';
 import { motion } from 'motion/react';
 
@@ -10,9 +10,19 @@ interface MemberSelectorProps {
   onSelectMember: (id: string) => void;
   onAddMember: (member: Omit<FamilyMember, 'id'>) => void;
   onDeleteMember: (id: string) => void;
+  onUpdateMember: (member: FamilyMember) => void;
 }
 
-const PRESET_AVATARS = ['👨‍💼', '👩‍🍳', '👦', '👧', '👶', '👴', '👵', '🐰', '🐱', '🐶', '🐹', '🐼', '🐨', '🦊'];
+const PRESET_AVATARS = [
+  // 小朋友与学生
+  '👦', '👧', '👶', '🧑‍🎓', '👩‍🎓', 
+  // 成年人 (爸爸、妈妈等日常与职业形象，多为黑发/深色头发)
+  '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🍳', '👩‍🍳', '👨‍💻', '👩‍💻', '👨‍🍼', '👩‍🍼',
+  // 老年人 (爷爷、奶奶、外公、外婆)
+  '👴', '👵', 
+  // 常见可爱小动物
+  '🐰', '🐱', '🐶', '🐹', '🐼', '🐨', '🦊', '🦁', '🐻', '🐯', '🐸', '🐤', '🐷', '🐧', '🦆'
+];
 const PRESET_COLORS = [
   { bg: '#A0D8EF', border: '#76BBD9', text: '#1E40AF', name: '清新蓝' },
   { bg: '#FFC1CC', border: '#FF91A4', text: '#9C1A3C', name: '元气粉' },
@@ -28,12 +38,20 @@ export default function MemberSelector({
   onSelectMember,
   onAddMember,
   onDeleteMember,
+  onUpdateMember,
 }: MemberSelectorProps) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('👧');
   const [selectedColorIndex, setSelectedColorIndex] = useState(4); // default purple
+
+  // Editing state
+  const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
+  const [editMemberName, setEditMemberName] = useState('');
+  const [editMemberRole, setEditMemberRole] = useState('');
+  const [editSelectedAvatar, setEditSelectedAvatar] = useState('👧');
+  const [editSelectedColorIndex, setEditSelectedColorIndex] = useState(4);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +72,35 @@ export default function MemberSelector({
     setNewMemberRole('');
     setSelectedAvatar('👧');
     setIsAddModalOpen(false);
+  };
+
+  const startEditing = (member: FamilyMember) => {
+    setEditingMember(member);
+    setEditMemberName(member.name);
+    setEditMemberRole(member.role);
+    setEditSelectedAvatar(member.avatar);
+    
+    // Find matching color
+    const colorIdx = PRESET_COLORS.findIndex(c => c.bg === member.color);
+    setEditSelectedColorIndex(colorIdx !== -1 ? colorIdx : 0);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember || !editMemberName.trim()) return;
+
+    const colorConfig = PRESET_COLORS[editSelectedColorIndex];
+    onUpdateMember({
+      ...editingMember,
+      name: editMemberName.trim(),
+      role: editMemberRole.trim() || '家庭成员',
+      color: colorConfig.bg,
+      borderColor: colorConfig.border,
+      textColor: colorConfig.text,
+      avatar: editSelectedAvatar,
+    });
+
+    setEditingMember(null);
   };
 
   return (
@@ -88,8 +135,20 @@ export default function MemberSelector({
                 </span>
               </button>
 
-              {/* Only show delete button for non-default members (the first 4 initial ones should remain for safety, or we can delete any but the active one) */}
-              {members.length > 3 && member.id !== activeMemberId && !['member-1', 'member-2', 'member-3', 'member-4'].includes(member.id) && (
+              {/* Edit Button - displayed on hover */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startEditing(member);
+                }}
+                className="absolute -bottom-1 -right-1 bg-[#FF91A4] text-white hover:bg-[#E07080] rounded-full p-0.5 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
+                title="编辑资料"
+              >
+                <Edit className="w-2.5 h-2.5" />
+              </button>
+
+              {/* Delete button - displayed on hover (allow deleting as long as there is more than 1 member, and not currently selected) */}
+              {members.length > 1 && member.id !== activeMemberId && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -97,7 +156,7 @@ export default function MemberSelector({
                       onDeleteMember(member.id);
                     }
                   }}
-                  className="absolute -top-1 -right-1 bg-red-400 text-white hover:bg-red-500 rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                  className="absolute -top-1 -right-1 bg-red-400 text-white hover:bg-red-500 rounded-full p-0.5 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
                   title="删除成员"
                 >
                   <Trash className="w-2.5 h-2.5" />
@@ -135,7 +194,7 @@ export default function MemberSelector({
               value={newMemberName}
               onChange={(e) => setNewMemberName(e.target.value)}
               placeholder="例如：妹妹、小红"
-              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm"
+              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
             />
           </div>
 
@@ -149,7 +208,7 @@ export default function MemberSelector({
               value={newMemberRole}
               onChange={(e) => setNewMemberRole(e.target.value)}
               placeholder="例如：长公主、小可爱 (选填)"
-              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm"
+              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
             />
           </div>
 
@@ -215,6 +274,109 @@ export default function MemberSelector({
               className="px-6 py-2 bg-[#FF91A4] hover:bg-[#E07080] text-white rounded-2xl text-sm font-bold shadow-xs border-b-2 border-[#C05D6D] hover:border-b-0 transition-all cursor-pointer"
             >
               欢度入驻 🎉
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Member Modal */}
+      <Modal
+        isOpen={!!editingMember}
+        onClose={() => setEditingMember(null)}
+        title="编辑家庭成员资料 ✏️"
+      >
+        <form onSubmit={handleEditSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1">
+              成员名字 *
+            </label>
+            <input
+              type="text"
+              required
+              maxLength={8}
+              value={editMemberName}
+              onChange={(e) => setEditMemberName(e.target.value)}
+              placeholder="例如：妹妹、小红"
+              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1">
+              角色/备注
+            </label>
+            <input
+              type="text"
+              maxLength={10}
+              value={editMemberRole}
+              onChange={(e) => setEditMemberRole(e.target.value)}
+              placeholder="例如：长公主、小可爱 (选填)"
+              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1.5">
+              选择萌趣头像 🎭
+            </label>
+            <div className="grid grid-cols-7 gap-2">
+              {PRESET_AVATARS.map((emoji) => (
+                <button
+                  type="button"
+                  key={emoji}
+                  onClick={() => setEditSelectedAvatar(emoji)}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border-2 transition-all cursor-pointer ${
+                    editSelectedAvatar === emoji
+                      ? 'border-[#FF91A4] bg-pink-100 scale-110'
+                      : 'border-transparent bg-white hover:bg-stone-50'
+                  }`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1.5">
+              专属配色 🎨
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {PRESET_COLORS.map((color, idx) => (
+                <button
+                  type="button"
+                  key={idx}
+                  onClick={() => setEditSelectedColorIndex(idx)}
+                  style={{ backgroundColor: color.bg }}
+                  className={`px-2 py-2 rounded-xl border-2 text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                    editSelectedColorIndex === idx
+                      ? 'border-[#FF91A4] scale-102 shadow-xs'
+                      : 'border-transparent opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-stone-400"
+                    style={{ backgroundColor: color.border }}
+                  />
+                  <span style={{ color: color.text }}>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setEditingMember(null)}
+              className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-[#6B4F4F] rounded-2xl text-sm font-bold transition-all cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2 bg-[#FF91A4] hover:bg-[#E07080] text-white rounded-2xl text-sm font-bold shadow-xs border-b-2 border-[#C05D6D] hover:border-b-0 transition-all cursor-pointer"
+            >
+              保存修改 💾
             </button>
           </div>
         </form>
