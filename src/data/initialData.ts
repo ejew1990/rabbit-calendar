@@ -21,8 +21,8 @@ export const INITIAL_MEMBERS: FamilyMember[] = [
   },
   {
     id: 'member-3',
-    name: '小明',
-    role: '小明',
+    name: '咚咚',
+    role: '咚咚',
     color: '#FFEC8B', // cute yellow
     textColor: '#78350F',
     borderColor: '#E6D478',
@@ -53,12 +53,12 @@ export const INITIAL_EVENTS: CalendarEvent[] = [
   },
   {
     id: 'event-2',
-    title: '小明钢琴公开课 🎹',
+    title: '咚咚钢琴公开课 🎹',
     date: '2026-07-02',
     time: '14:00',
     memberId: 'member-3',
     category: 'study',
-    description: '小明的钢琴汇报演出，全家一起去听。',
+    description: '咚咚的钢琴汇报演出，全家一起去听。',
   },
   {
     id: 'event-3',
@@ -91,7 +91,7 @@ export const INITIAL_EVENTS: CalendarEvent[] = [
   },
   {
     id: 'event-6',
-    title: '带小明去图书馆 📚',
+    title: '带咚咚去图书馆 📚',
     date: '2026-07-05',
     time: '10:00',
     memberId: 'all',
@@ -140,7 +140,7 @@ export const INITIAL_TODOS: TodoTask[] = [
   },
   {
     id: 'todo-4',
-    title: '检查小明的暑期数学打卡 ✏️',
+    title: '检查咚咚的暑期数学打卡 ✏️',
     completed: false,
     createdBy: 'member-2',
     assignedTo: 'member-1',
@@ -162,8 +162,8 @@ export const INITIAL_ALERTS: AlertNotification[] = [
   {
     id: 'alert-1',
     time: '下午 3:00',
-    title: '提醒：接小明放学 🏫',
-    message: '爸爸：别忘了去学校接小明放学，今天有钢琴公开课。',
+    title: '提醒：接咚咚放学 🏫',
+    message: '爸爸：别忘了去学校接咚咚放学，今天有钢琴公开课。',
     memberId: 'member-1',
     type: 'reminder',
     timestamp: '2026-07-08T15:00:00Z',
@@ -195,7 +195,7 @@ export const BUNNY_TIPS = [
   "一家人整整齐齐，是最最温暖的事了！❤️",
   "今天天气真棒，全家一起出去散散步、呼吸新鲜空气吧！🌸",
   "小提示：要定期给我的小屋通风，多谢大家照顾啦~ 🐰",
-  "小明的钢琴弹得越来越好听了！真是个聪明的孩子 🎵",
+  "咚咚的钢琴弹得越来越好听了！真是个聪明的孩子 🎵",
   "妈妈辛苦了！今天晚上别忘了多捏捏肩膀放松噢 💆‍♀️",
   "爸爸工作辛苦啦！休息时间闭上眼睛做个兔兔眼保健操吧 👀",
 ];

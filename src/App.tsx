@@ -19,22 +19,46 @@ export default function App() {
   // Load initial states from LocalStorage or fall back to defaults
   const [members, setMembers] = useState<FamilyMember[]>(() => {
     const saved = localStorage.getItem('bunny_family_members');
-    return saved ? JSON.parse(saved) : INITIAL_MEMBERS;
+    const parsed = saved ? JSON.parse(saved) : INITIAL_MEMBERS;
+    // Auto-migrate "小明" to "咚咚" to handle cached data on old devices (like mobile phones)
+    return parsed.map((m: FamilyMember) => {
+      if (m.name === '小明') {
+        return { ...m, name: '咚咚', role: m.role === '小明' ? '咚咚' : m.role };
+      }
+      return m;
+    });
   });
 
   const [events, setEvents] = useState<CalendarEvent[]>(() => {
     const saved = localStorage.getItem('bunny_family_events');
-    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
+    const parsed = saved ? JSON.parse(saved) : INITIAL_EVENTS;
+    // Auto-migrate references in titles and descriptions from "小明" to "咚咚"
+    return parsed.map((e: CalendarEvent) => ({
+      ...e,
+      title: e.title.replace(/小明/g, '咚咚'),
+      description: e.description ? e.description.replace(/小明/g, '咚咚') : e.description,
+    }));
   });
 
   const [todos, setTodos] = useState<TodoTask[]>(() => {
     const saved = localStorage.getItem('bunny_family_todos');
-    return saved ? JSON.parse(saved) : INITIAL_TODOS;
+    const parsed = saved ? JSON.parse(saved) : INITIAL_TODOS;
+    // Auto-migrate references in todo titles from "小明" to "咚咚"
+    return parsed.map((t: TodoTask) => ({
+      ...t,
+      title: t.title.replace(/小明/g, '咚咚'),
+    }));
   });
 
   const [alerts, setAlerts] = useState<AlertNotification[]>(() => {
     const saved = localStorage.getItem('bunny_family_alerts');
-    return saved ? JSON.parse(saved) : INITIAL_ALERTS;
+    const parsed = saved ? JSON.parse(saved) : INITIAL_ALERTS;
+    // Auto-migrate references in alert titles and messages from "小明" to "咚咚"
+    return parsed.map((a: AlertNotification) => ({
+      ...a,
+      title: a.title.replace(/小明/g, '咚咚'),
+      message: a.message.replace(/小明/g, '咚咚'),
+    }));
   });
 
   const [activeMemberId, setActiveMemberId] = useState<string>(() => {
@@ -82,42 +106,133 @@ export default function App() {
   // Export & Deploy Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Sync state to LocalStorage whenever they change
+  // Sync state tracking
+  const [lastVersion, setLastVersion] = useState<number>(0);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+
+  // Load initial data from server on mount
   useEffect(() => {
+    const initData = async () => {
+      setSyncStatus('syncing');
+      try {
+        const res = await fetch('/api/sync');
+        if (res.ok) {
+          const data = await res.json();
+          // Update React states from server DB
+          if (data.members && data.members.length > 0) setMembers(data.members);
+          if (data.events) setEvents(data.events);
+          if (data.todos) setTodos(data.todos);
+          if (data.alerts) setAlerts(data.alerts);
+          if (data.activeMemberId) setActiveMemberId(data.activeMemberId);
+          if (data.appTitle) setAppTitle(data.appTitle);
+          if (data.appSubtitle) setAppSubtitle(data.appSubtitle);
+          if (data.appDescription) setAppDescription(data.appDescription);
+          if (data.passcode) setPasscode(data.passcode);
+          setLastVersion(data.version || 0);
+          setSyncStatus('synced');
+        } else {
+          setSyncStatus('error');
+        }
+      } catch (err) {
+        console.error('Failed to pull from server:', err);
+        setSyncStatus('error');
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
+    initData();
+  }, []);
+
+  // Periodic polling for updates from other devices (every 3.5 seconds)
+  useEffect(() => {
+    let active = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/sync/version');
+        if (res.ok && active) {
+          const { version } = await res.json();
+          if (version > lastVersion) {
+            setSyncStatus('syncing');
+            const pullRes = await fetch('/api/sync');
+            if (pullRes.ok && active) {
+              const data = await pullRes.json();
+              setMembers(data.members);
+              setEvents(data.events);
+              setTodos(data.todos);
+              setAlerts(data.alerts);
+              setActiveMemberId(data.activeMemberId);
+              setAppTitle(data.appTitle);
+              setAppSubtitle(data.appSubtitle);
+              setAppDescription(data.appDescription);
+              setPasscode(data.passcode);
+              setLastVersion(data.version);
+              setSyncStatus('synced');
+              triggerToast('🔄', '数据已更新', '检测到其他设备上的修改，已实时同步。');
+            } else {
+              setSyncStatus('error');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Sync poll failed:', e);
+      }
+    }, 3500);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [lastVersion]);
+
+  // Combined debounce saver to Server (updates both local storage as a backup and the cloud server)
+  useEffect(() => {
+    if (isInitialLoading) return; // Prevent saving default/empty state over server database on mount
+
+    const handler = setTimeout(async () => {
+      setSyncStatus('syncing');
+      try {
+        const response = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            members,
+            events,
+            todos,
+            alerts,
+            activeMemberId,
+            appTitle,
+            appSubtitle,
+            appDescription,
+            passcode,
+          }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setLastVersion(data.version);
+          setSyncStatus('synced');
+        } else {
+          setSyncStatus('error');
+        }
+      } catch (err) {
+        console.error('Failed to sync to server:', err);
+        setSyncStatus('error');
+      }
+    }, 1200); // 1.2s debounce to aggregate quick changes
+
+    // Also write to local storage as safety backup
     localStorage.setItem('bunny_family_members', JSON.stringify(members));
-  }, [members]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_family_events', JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_family_todos', JSON.stringify(todos));
-  }, [todos]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_family_alerts', JSON.stringify(alerts));
-  }, [alerts]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_family_active_id', activeMemberId);
-  }, [activeMemberId]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_app_title', appTitle);
-  }, [appTitle]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_app_subtitle', appSubtitle);
-  }, [appSubtitle]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_app_description', appDescription);
-  }, [appDescription]);
-
-  useEffect(() => {
     localStorage.setItem('bunny_family_passcode', passcode);
-  }, [passcode]);
+
+    return () => clearTimeout(handler);
+  }, [members, events, todos, alerts, activeMemberId, appTitle, appSubtitle, appDescription, passcode, isInitialLoading]);
 
   // Trigger custom toast notification
   const triggerToast = (avatar: string, title: string, message: string) => {
@@ -417,6 +532,27 @@ export default function App() {
                 <span className="text-xs bg-[#FFDAB9]/50 text-[#FF91A4] font-bold px-2 py-0.5 rounded-full">
                   {appSubtitle}
                 </span>
+                
+                {/* Realtime Sync Status Badge */}
+                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border transition-all ${
+                  syncStatus === 'synced' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                  syncStatus === 'syncing' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                  syncStatus === 'error' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                  'bg-stone-50 text-stone-500 border-stone-200'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    syncStatus === 'synced' ? 'bg-emerald-500' :
+                    syncStatus === 'syncing' ? 'bg-amber-500 animate-pulse' :
+                    syncStatus === 'error' ? 'bg-rose-500' :
+                    'bg-stone-400'
+                  }`} />
+                  <span>
+                    {syncStatus === 'synced' ? '多端已同步 🌍' :
+                     syncStatus === 'syncing' ? '同步中...' :
+                     syncStatus === 'error' ? '同步出错' : '已就绪'}
+                  </span>
+                </span>
+
                 <button
                   onClick={() => setIsEditTitleModalOpen(true)}
                   className="p-1 rounded-full text-[#A68F8F] hover:text-[#FF91A4] hover:bg-[#FFF0F0] transition-all opacity-40 group-hover:opacity-100 cursor-pointer ml-1"
@@ -622,23 +758,41 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Step 3: Connect to Vercel */}
+              {/* Step 3: Deploy Full-Stack Node Server */}
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="w-6 h-6 rounded-full bg-[#FF91A4] text-white flex items-center justify-center text-xs font-bold">3</span>
-                  <h3 className="font-black text-sm">一键在 Vercel 发布上线 (永久免费)</h3>
+                  <h3 className="font-black text-sm">选择免费平台发布上线 (推荐 Render 以支持多端实时同步)</h3>
                 </div>
                 <div className="pl-8 space-y-2 text-xs leading-relaxed font-semibold">
                   <p className="text-[#A68F8F] font-bold">
-                    最后，利用 Vercel 托管平台把 GitHub 上的代码变成一个全球任何地方都可以打开的真实网站：
+                    因为我们升级了全新的 Node.js 后端服务来实现多设备实时同步，建议选择支持运行后端的平台：
                   </p>
-                  <ol className="list-decimal list-inside space-y-1.5 pl-2 bg-[#FFF9F2]/40 p-3 rounded-xl border border-[#FFDAB9]/20 text-stone-700">
-                    <li>访问 <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-[#FF91A4] hover:underline font-bold inline-flex items-center gap-0.5">vercel.com <Globe className="w-3 h-3" /></a> 并注册一个免费账号，注册时请选择 <strong className="font-bold">"Continue with GitHub"</strong>（这样能免密连接）。</li>
-                    <li>登录 Vercel 主控制台，点击右上角的黑底白字按钮 <strong className="font-bold">Add New</strong>{" → "}<strong className="font-bold">Project</strong>。</li>
-                    <li>页面上会自动列出你刚才在 GitHub 新建的 <code className="bg-white px-1.5 py-0.5 rounded border border-stone-200 font-mono text-xs">rabbit-calendar</code> 仓库，点击它旁边的黑色 <strong className="font-bold text-[#FF91A4]">Import</strong> 按钮。</li>
-                    <li>在配置页面的 Framework Preset 处确认是 <strong className="font-bold">Vite</strong>，其他内容**完全不需要修改**，直接点击底部的黑色 <strong className="font-bold text-white bg-stone-900 px-4 py-1.5 rounded-xl">Deploy</strong> 按钮！</li>
-                    <li>大概等待 15 秒钟的自动构建，烟花在屏幕绽放！你就拥有了一个永久免费的、国内网络直接秒开的专属家庭日历网站链接啦！🎉</li>
-                  </ol>
+                  
+                  <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 mb-2">
+                    <p className="text-[#065F46] font-bold mb-1.5">🌟 推荐方案：发布至 Render (完全支持多端实时同步)：</p>
+                    <ol className="list-decimal list-inside space-y-1.5 pl-1 text-stone-700">
+                      <li>访问 <a href="https://render.com" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline font-bold inline-flex items-center gap-0.5">render.com <Globe className="w-3 h-3" /></a> 并选择 GitHub 登录。</li>
+                      <li>在 Dashboard 点击 <strong className="font-bold">New +</strong> 并选择 <strong className="font-bold">Web Service</strong>。</li>
+                      <li>连接你的 GitHub 账号，导入你新建的 <code className="bg-white px-1.5 py-0.5 rounded border border-stone-200 font-mono text-xs">rabbit-calendar</code> 仓库。</li>
+                      <li>在配置页中：
+                        <ul className="list-disc list-inside pl-4 mt-1 space-y-0.5 text-stone-600">
+                          <li>Build Command: <code className="bg-white px-1 py-0.5 rounded font-mono text-xs text-stone-800">npm run build</code></li>
+                          <li>Start Command: <code className="bg-white px-1 py-0.5 rounded font-mono text-xs text-stone-800">npm run start</code></li>
+                        </ul>
+                      </li>
+                      <li>点击最下方的 <strong className="font-bold text-white bg-stone-900 px-3 py-1 rounded-lg">Deploy Web Service</strong>。稍等 2 分钟构建完成后，你就能获得一个支持多设备、实时保存、完全同步的线上家庭日历啦！✨</li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
+                    <p className="text-stone-700 font-bold mb-1.5">🎈 备用方案：发布至 Vercel (仅支持单机离线使用)：</p>
+                    <ol className="list-decimal list-inside space-y-1 pl-1 text-stone-600">
+                      <li>访问 <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-[#FF91A4] hover:underline font-bold">vercel.com</a>，通过 GitHub 登录并导入仓库。</li>
+                      <li>Framework Preset 确认为 <strong className="font-bold">Vite</strong>，直接点击 <strong className="font-bold">Deploy</strong> 部署。</li>
+                      <li>注意：由于 Vercel 是无状态的静态平台，该方案仅限单机在浏览器 LocalStorage 中保存，无法在不同手机设备间实时同步日程。</li>
+                    </ol>
+                  </div>
                 </div>
               </div>
 

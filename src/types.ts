@@ -5,7 +5,7 @@ export interface FamilyMember {
   textColor: string;  // Contrast text color
   borderColor: string;// Border color like '#76BBD9'
   avatar: string;     // Emoji avatar or cute character
-  role: string;       // e.g., '爸爸', '妈妈', '小明'
+  role: string;       // e.g., '爸爸', '妈妈', '咚咚'
 }
 
 export interface CalendarEvent {

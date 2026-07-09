@@ -135,19 +135,19 @@ export default function MemberSelector({
                 </span>
               </button>
 
-              {/* Edit Button - displayed on hover */}
+              {/* Edit Button - displayed on hover on desktop, always on mobile */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   startEditing(member);
                 }}
-                className="absolute -bottom-1 -right-1 bg-[#FF91A4] text-white hover:bg-[#E07080] rounded-full p-0.5 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
+                className="absolute -bottom-1 -right-1 bg-[#FF91A4] text-white hover:bg-[#E07080] rounded-full p-1 shadow-xs md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
                 title="编辑资料"
               >
-                <Edit className="w-2.5 h-2.5" />
+                <Edit className="w-3 h-3" />
               </button>
 
-              {/* Delete button - displayed on hover (allow deleting as long as there is more than 1 member, and not currently selected) */}
+              {/* Delete button - displayed on hover on desktop, always on mobile (allow deleting as long as there is more than 1 member, and not currently selected) */}
               {members.length > 1 && member.id !== activeMemberId && (
                 <button
                   onClick={(e) => {
@@ -156,10 +156,10 @@ export default function MemberSelector({
                       onDeleteMember(member.id);
                     }
                   }}
-                  className="absolute -top-1 -right-1 bg-red-400 text-white hover:bg-red-500 rounded-full p-0.5 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
+                  className="absolute -top-1 -right-1 bg-red-400 text-white hover:bg-red-500 rounded-full p-1 shadow-xs md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity duration-200 cursor-pointer border border-white z-10"
                   title="删除成员"
                 >
-                  <Trash className="w-2.5 h-2.5" />
+                  <Trash className="w-3 h-3" />
                 </button>
               )}
             </div>

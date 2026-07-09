@@ -1,0 +1,189 @@
+{
+  "members": [
+    {
+      "id": "member-1",
+      "name": "爸爸",
+      "role": "爸爸",
+      "color": "#A0D8EF",
+      "textColor": "#1E40AF",
+      "borderColor": "#76BBD9",
+      "avatar": "👨‍💼"
+    },
+    {
+      "id": "member-2",
+      "name": "妈妈",
+      "role": "妈妈",
+      "color": "#FFC1CC",
+      "textColor": "#9C1A3C",
+      "borderColor": "#FF91A4",
+      "avatar": "👩‍🍳"
+    },
+    {
+      "id": "member-3",
+      "name": "咚咚",
+      "role": "咚咚",
+      "color": "#FFEC8B",
+      "textColor": "#78350F",
+      "borderColor": "#E6D478",
+      "avatar": "👦"
+    },
+    {
+      "id": "member-4",
+      "name": "兔兔小助手",
+      "role": "宠物/助手",
+      "color": "#B2E7D5",
+      "textColor": "#065F46",
+      "borderColor": "#8ACBB5",
+      "avatar": "🐰"
+    }
+  ],
+  "events": [
+    {
+      "id": "event-1",
+      "title": "全家大扫除 🧹",
+      "date": "2026-07-11",
+      "time": "09:30",
+      "memberId": "all",
+      "category": "life",
+      "description": "全家一起打扫卫生，清洗兔兔的城堡，晒被子！"
+    },
+    {
+      "id": "event-2",
+      "title": "咚咚钢琴公开课 🎹",
+      "date": "2026-07-02",
+      "time": "14:00",
+      "memberId": "member-3",
+      "category": "study",
+      "description": "咚咚的钢琴汇报演出，全家一起去听。"
+    },
+    {
+      "id": "event-3",
+      "title": "妈妈生日派对 🎂",
+      "date": "2026-07-09",
+      "time": "18:00",
+      "memberId": "member-2",
+      "category": "birthday",
+      "description": "悄悄订一个大草莓蛋糕，给妈妈一个大大的惊喜！"
+    },
+    {
+      "id": "event-4",
+      "title": "全家聚餐吃火锅 🍲",
+      "date": "2026-07-08",
+      "time": "19:00",
+      "memberId": "all",
+      "category": "life",
+      "description": "今天晚上去吃兔兔主题蒸汽火锅，多点一点胡萝卜和青菜！"
+    },
+    {
+      "id": "event-5",
+      "title": "爸爸出差上海 ✈️",
+      "date": "2026-07-13",
+      "time": "全天",
+      "memberId": "member-1",
+      "category": "work",
+      "description": "参加行业交流论坛，周五（17号）下午回。",
+      "isAllDay": true,
+      "endDate": "2026-07-17"
+    },
+    {
+      "id": "event-6",
+      "title": "带咚咚去图书馆 📚",
+      "date": "2026-07-05",
+      "time": "10:00",
+      "memberId": "all",
+      "category": "study",
+      "description": "借一些科普书籍和英语绘本。"
+    },
+    {
+      "id": "event-7",
+      "title": "给兔兔剪指甲 💅",
+      "date": "2026-07-18",
+      "time": "16:00",
+      "memberId": "member-4",
+      "category": "life",
+      "description": "带兔兔去宠物店修毛并修剪指甲。"
+    }
+  ],
+  "todos": [
+    {
+      "id": "todo-1",
+      "title": "买胡萝卜、燕麦和新鲜牛奶 🥕🥛",
+      "completed": false,
+      "createdBy": "member-2",
+      "assignedTo": "member-1",
+      "dueDate": "2026-07-08",
+      "createdAt": "2026-07-07"
+    },
+    {
+      "id": "todo-2",
+      "title": "给兔兔的饮水器换水并打扫小窝 🏠",
+      "completed": false,
+      "createdBy": "member-3",
+      "assignedTo": "all",
+      "dueDate": "2026-07-09",
+      "createdAt": "2026-07-08"
+    },
+    {
+      "id": "todo-3",
+      "title": "预订周末的旋转餐厅 🍽️",
+      "completed": true,
+      "createdBy": "member-1",
+      "assignedTo": "member-2",
+      "completedBy": "member-2",
+      "dueDate": "2026-07-05",
+      "createdAt": "2026-07-03"
+    },
+    {
+      "id": "todo-4",
+      "title": "检查咚咚的暑期数学打卡 ✏️",
+      "completed": false,
+      "createdBy": "member-2",
+      "assignedTo": "member-1",
+      "dueDate": "2026-07-10",
+      "createdAt": "2026-07-08"
+    },
+    {
+      "id": "todo-5",
+      "title": "购买去水上乐园的防晒霜和泳衣 🏖️",
+      "completed": false,
+      "createdBy": "member-2",
+      "assignedTo": "all",
+      "dueDate": "2026-07-12",
+      "createdAt": "2026-07-08"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "alert-1",
+      "time": "下午 3:00",
+      "title": "提醒：接咚咚放学 🏫",
+      "message": "爸爸：别忘了去学校接咚咚放学，今天有钢琴公开课。",
+      "memberId": "member-1",
+      "type": "reminder",
+      "timestamp": "2026-07-08T15:00:00Z"
+    },
+    {
+      "id": "alert-2",
+      "time": "上午 10:00",
+      "title": "提醒：全家大扫除 🧹",
+      "message": "妈妈：周末全家大扫除，记得把被子和枕头拿出去晒太阳 ☀️",
+      "memberId": "member-2",
+      "type": "reminder",
+      "timestamp": "2026-07-08T10:00:00Z"
+    },
+    {
+      "id": "alert-3",
+      "time": "刚才",
+      "title": "兔兔温馨贴士 🐇",
+      "message": "兔兔小管家：多吃胡萝卜补充维生素！今天也要和家人开开心心噢~",
+      "memberId": "member-4",
+      "type": "bunny",
+      "timestamp": "2026-07-08T02:45:00Z"
+    }
+  ],
+  "activeMemberId": "member-2",
+  "appTitle": "兔兔家庭日历",
+  "appSubtitle": "共享小窝 🐰",
+  "appDescription": "同步蜜糖家庭日程，管理共同待办，随时拉响萌趣提醒 ✨",
+  "passcode": "咚咚7777"
+}
