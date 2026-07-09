@@ -7,7 +7,8 @@
       "color": "#A0D8EF",
       "textColor": "#1E40AF",
       "borderColor": "#76BBD9",
-      "avatar": "👨‍💼"
+      "avatar": "👨‍💼",
+      "updatedAt": 1783593796270
     },
     {
       "id": "member-2",
@@ -16,7 +17,8 @@
       "color": "#FFC1CC",
       "textColor": "#9C1A3C",
       "borderColor": "#FF91A4",
-      "avatar": "👩‍🍳"
+      "avatar": "👩‍🍳",
+      "updatedAt": 1783593796270
     },
     {
       "id": "member-3",
@@ -25,7 +27,8 @@
       "color": "#FFEC8B",
       "textColor": "#78350F",
       "borderColor": "#E6D478",
-      "avatar": "👦"
+      "avatar": "👦",
+      "updatedAt": 1783593796270
     },
     {
       "id": "member-4",
@@ -34,7 +37,8 @@
       "color": "#B2E7D5",
       "textColor": "#065F46",
       "borderColor": "#8ACBB5",
-      "avatar": "🐰"
+      "avatar": "🐰",
+      "updatedAt": 1783593796270
     }
   ],
   "events": [
@@ -45,7 +49,8 @@
       "time": "09:30",
       "memberId": "all",
       "category": "life",
-      "description": "全家一起打扫卫生，清洗兔兔的城堡，晒被子！"
+      "description": "全家一起打扫卫生，清洗兔兔的城堡，晒被子！",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-2",
@@ -54,7 +59,8 @@
       "time": "14:00",
       "memberId": "member-3",
       "category": "study",
-      "description": "咚咚的钢琴汇报演出，全家一起去听。"
+      "description": "咚咚的钢琴汇报演出，全家一起去听。",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-3",
@@ -63,7 +69,8 @@
       "time": "18:00",
       "memberId": "member-2",
       "category": "birthday",
-      "description": "悄悄订一个大草莓蛋糕，给妈妈一个大大的惊喜！"
+      "description": "悄悄订一个大草莓蛋糕，给妈妈一个大大的惊喜！",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-4",
@@ -72,7 +79,8 @@
       "time": "19:00",
       "memberId": "all",
       "category": "life",
-      "description": "今天晚上去吃兔兔主题蒸汽火锅，多点一点胡萝卜和青菜！"
+      "description": "今天晚上去吃兔兔主题蒸汽火锅，多点一点胡萝卜和青菜！",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-5",
@@ -83,7 +91,8 @@
       "category": "work",
       "description": "参加行业交流论坛，周五（17号）下午回。",
       "isAllDay": true,
-      "endDate": "2026-07-17"
+      "endDate": "2026-07-17",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-6",
@@ -92,7 +101,8 @@
       "time": "10:00",
       "memberId": "all",
       "category": "study",
-      "description": "借一些科普书籍和英语绘本。"
+      "description": "借一些科普书籍和英语绘本。",
+      "updatedAt": 1783593796271
     },
     {
       "id": "event-7",
@@ -101,7 +111,8 @@
       "time": "16:00",
       "memberId": "member-4",
       "category": "life",
-      "description": "带兔兔去宠物店修毛并修剪指甲。"
+      "description": "带兔兔去宠物店修毛并修剪指甲。",
+      "updatedAt": 1783593796271
     }
   ],
   "todos": [
@@ -112,7 +123,8 @@
       "createdBy": "member-2",
       "assignedTo": "member-1",
       "dueDate": "2026-07-08",
-      "createdAt": "2026-07-07"
+      "createdAt": "2026-07-07",
+      "updatedAt": 1783593796271
     },
     {
       "id": "todo-2",
@@ -121,7 +133,8 @@
       "createdBy": "member-3",
       "assignedTo": "all",
       "dueDate": "2026-07-09",
-      "createdAt": "2026-07-08"
+      "createdAt": "2026-07-08",
+      "updatedAt": 1783593796271
     },
     {
       "id": "todo-3",
@@ -131,7 +144,8 @@
       "assignedTo": "member-2",
       "completedBy": "member-2",
       "dueDate": "2026-07-05",
-      "createdAt": "2026-07-03"
+      "createdAt": "2026-07-03",
+      "updatedAt": 1783593796271
     },
     {
       "id": "todo-4",
@@ -140,7 +154,8 @@
       "createdBy": "member-2",
       "assignedTo": "member-1",
       "dueDate": "2026-07-10",
-      "createdAt": "2026-07-08"
+      "createdAt": "2026-07-08",
+      "updatedAt": 1783593796271
     },
     {
       "id": "todo-5",
@@ -149,7 +164,8 @@
       "createdBy": "member-2",
       "assignedTo": "all",
       "dueDate": "2026-07-12",
-      "createdAt": "2026-07-08"
+      "createdAt": "2026-07-08",
+      "updatedAt": 1783593796271
     }
   ],
   "alerts": [
@@ -160,7 +176,8 @@
       "message": "爸爸：别忘了去学校接咚咚放学，今天有钢琴公开课。",
       "memberId": "member-1",
       "type": "reminder",
-      "timestamp": "2026-07-08T15:00:00Z"
+      "timestamp": "2026-07-08T15:00:00Z",
+      "updatedAt": 1783593796271
     },
     {
       "id": "alert-2",
@@ -169,7 +186,8 @@
       "message": "妈妈：周末全家大扫除，记得把被子和枕头拿出去晒太阳 ☀️",
       "memberId": "member-2",
       "type": "reminder",
-      "timestamp": "2026-07-08T10:00:00Z"
+      "timestamp": "2026-07-08T10:00:00Z",
+      "updatedAt": 1783593796271
     },
     {
       "id": "alert-3",
@@ -178,12 +196,15 @@
       "message": "兔兔小管家：多吃胡萝卜补充维生素！今天也要和家人开开心心噢~",
       "memberId": "member-4",
       "type": "bunny",
-      "timestamp": "2026-07-08T02:45:00Z"
+      "timestamp": "2026-07-08T02:45:00Z",
+      "updatedAt": 1783593796271
     }
   ],
   "activeMemberId": "member-2",
   "appTitle": "兔兔家庭日历",
   "appSubtitle": "共享小窝 🐰",
   "appDescription": "同步蜜糖家庭日程，管理共同待办，随时拉响萌趣提醒 ✨",
-  "passcode": "咚咚7777"
+  "passcode": "咚咚7777",
+  "timestamp": 1783593796271,
+  "clientLastVersion": 1783593790902
 }

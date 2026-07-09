@@ -73,15 +73,78 @@ async function startServer() {
     });
   });
 
-  // POST `/api/sync`: update full state or individual collections
+  // POST `/api/sync`: update full state or individual collections with intelligent collision prevention
   app.post("/api/sync", (req, res) => {
     const incoming = req.body;
     const current = loadDb();
+    const clientLastVersion = Number(incoming.clientLastVersion) || 0;
 
-    // Merge incoming keys with current DB content to support full or partial saves
+    // Smart merge collections to prevent overwrites from stale family members
+    const smartMerge = (currentList: any[], incomingList: any[]) => {
+      if (!incomingList) return currentList;
+      if (!Array.isArray(currentList) || currentList.length === 0) {
+        // If current is empty, all incoming are new
+        const now = Date.now();
+        return incomingList.map(item => ({ ...item, updatedAt: now }));
+      }
+
+      const now = Date.now();
+      const incomingMap = new Map(incomingList.map(item => [item.id, item]));
+      const mergedList: any[] = [];
+
+      // 1. Process all incoming elements
+      for (const incomingItem of incomingList) {
+        const currentItem = currentList.find(x => x.id === incomingItem.id);
+        if (currentItem) {
+          // If the item exists, compare content to see if client actually modified it
+          const hasChanged = JSON.stringify({ ...currentItem, updatedAt: undefined }) !== 
+                             JSON.stringify({ ...incomingItem, updatedAt: undefined });
+          mergedList.push({
+            ...incomingItem,
+            updatedAt: hasChanged ? now : (currentItem.updatedAt || now)
+          });
+        } else {
+          // Brand new item added by this client
+          mergedList.push({
+            ...incomingItem,
+            updatedAt: now
+          });
+        }
+      }
+
+      // 2. Process current elements that are missing from incoming (possible deletions)
+      for (const currentItem of currentList) {
+        if (!incomingMap.has(currentItem.id)) {
+          const itemUpdatedAt = currentItem.updatedAt || 0;
+          if (itemUpdatedAt > clientLastVersion) {
+            // This item was added/edited by another family member AFTER this client's last sync!
+            // The client did not know about it, so they omitted it. We MUST PRESERVE it to avoid wiping out others' work.
+            mergedList.push(currentItem);
+          } else {
+            // The client did know about this item, but chose to omit it.
+            // This is an intentional deletion. We let it be removed.
+            console.log(`[SmartMerge] Intentional deletion of item: ${currentItem.id}`);
+          }
+        }
+      }
+
+      return mergedList;
+    };
+
+    // Apply smart merge to family collections
+    const mergedMembers = smartMerge(current.members, incoming.members);
+    const mergedEvents = smartMerge(current.events, incoming.events);
+    const mergedTodos = smartMerge(current.todos, incoming.todos);
+    const mergedAlerts = smartMerge(current.alerts, incoming.alerts);
+
     const updated = {
       ...current,
-      ...incoming
+      ...incoming,
+      members: mergedMembers,
+      events: mergedEvents,
+      todos: mergedTodos,
+      alerts: mergedAlerts,
+      timestamp: Date.now()
     };
 
     saveDb(updated);

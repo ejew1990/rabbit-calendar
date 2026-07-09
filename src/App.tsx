@@ -15,6 +15,42 @@ import Modal from './components/Modal';
 import { Heart, Bell, Calendar as CalendarIcon, Sparkles, CloudLightning, Download, BookOpen, X, Globe, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+// Cute synthesized bell chime using Web Audio API (zero audio file dependencies, fully reliable)
+const playChime = () => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      
+      gainNode.gain.setValueAtTime(0, start);
+      gainNode.gain.linearRampToValueAtTime(0.25, start + 0.04);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+
+    const now = ctx.currentTime;
+    // Bunny chime sequence: C6 -> E6 -> G6 -> C7
+    playTone(1046.50, now, 0.45);
+    playTone(1318.51, now + 0.12, 0.45);
+    playTone(1567.98, now + 0.24, 0.45);
+    playTone(2093.00, now + 0.36, 0.65);
+  } catch (error) {
+    console.error('Audio chime failed to play:', error);
+  }
+};
+
 export default function App() {
   // Load initial states from LocalStorage or fall back to defaults
   const [members, setMembers] = useState<FamilyMember[]>(() => {
@@ -103,6 +139,46 @@ export default function App() {
   // Toast Notification State
   const [toast, setToast] = useState<{ id: string; avatar: string; message: string; title: string } | null>(null);
 
+  // Notification Permission State
+  const [notiPermission, setNotiPermission] = useState<string>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+
+  const requestAndTestNotification = async () => {
+    // Play the cute audio chime
+    playChime();
+
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      triggerToast('🐰', '系统通知不支持', '您的浏览器不支持系统通知，但应用内仍然能通过声音和横幅提醒您！');
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      setNotiPermission(permission);
+      if (permission === 'granted') {
+        new Notification('🐰 兔兔家庭日历', {
+          body: '🎉 太棒啦！系统后台提醒已成功开启！离开网页也能收到通知噢。',
+          icon: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23FF91A4"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>',
+        });
+        triggerToast('🔔', '后台提醒开启成功！', '现在即使手机熄屏或退到后台，时间一到也会发出通知栏提示！');
+      } else {
+        triggerToast('🔒', '您拒绝了通知权限', '如果需要系统通知弹窗，请在浏览器地址栏左侧重新允许通知。');
+      }
+    } else if (Notification.permission === 'granted') {
+      new Notification('🐰 兔兔家庭日历 (测试)', {
+        body: '🎵 叮咚！这是一个提醒测试弹窗。您已完美开启后台提醒服务！',
+        icon: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23FF91A4"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>',
+      });
+      triggerToast('🎵', '测试通知已发出！', '听到了吗？系统通知栏也会同步弹出可爱的兔兔日程消息噢！');
+    } else {
+      triggerToast('🔒', '系统通知已被禁用', '您曾在浏览器中关闭了通知。请点击地址栏的锁扣标志重新允许通知，即可开启！');
+    }
+  };
+
   // Export & Deploy Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -119,7 +195,37 @@ export default function App() {
         const res = await fetch('/api/sync');
         if (res.ok) {
           const data = await res.json();
-          // Update React states from server DB
+          
+          // CRITICAL BUG FIX: Prevent stateless server restarts or default DB from wiping user's newer local storage data!
+          const localTimestampStr = localStorage.getItem('bunny_data_timestamp');
+          const localTimestamp = localTimestampStr ? parseInt(localTimestampStr, 10) : 0;
+          const serverTimestamp = data.timestamp || 0;
+
+          if (localTimestamp > serverTimestamp) {
+            console.log('Local storage has newer changes than server. Uploading local state to heal server data...');
+            await fetch('/api/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                members,
+                events,
+                todos,
+                alerts,
+                activeMemberId,
+                appTitle,
+                appSubtitle,
+                appDescription,
+                passcode,
+                timestamp: localTimestamp,
+                clientLastVersion: serverTimestamp,
+              }),
+            });
+            setSyncStatus('synced');
+            setIsInitialLoading(false);
+            return;
+          }
+
+          // Otherwise, update React states from server DB as normal
           if (data.members && data.members.length > 0) setMembers(data.members);
           if (data.events) setEvents(data.events);
           if (data.todos) setTodos(data.todos);
@@ -185,9 +291,74 @@ export default function App() {
     };
   }, [lastVersion]);
 
+  // Background check for upcoming calendar events
+  useEffect(() => {
+    if (isInitialLoading) return;
+
+    const checkInterval = setInterval(() => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`; // YYYY-MM-DD
+      const currentHM = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'); // HH:MM
+
+      let updated = false;
+      const nextEvents = events.map((event) => {
+        // Only trigger if date and time match, it is not an all-day event, and reminder hasn't sent yet
+        if (event.date === todayStr && event.time === currentHM && !event.isAllDay && !event.reminderSent) {
+          updated = true;
+          
+          // 1. Play cute sound
+          playChime();
+
+          // 2. Trigger custom in-app Toast
+          const assocMember = members.find((m) => m.id === event.memberId);
+          triggerToast(assocMember?.avatar || '⏰', '家庭日程开始啦！⏰', `"${event.title}" 现在已经到时间了哦！`);
+
+          // 3. System HTML5 Notification (background)
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('🐰 兔兔家庭日历提醒', {
+              body: `【${event.title}】时间到啦！\n${event.description || '全家人都要快快准备好哦 🥕'}`,
+              tag: event.id,
+            });
+          }
+
+          // 4. Log a new system alert in family alerts stream
+          const alertId = `alert-${Date.now()}`;
+          const alert: AlertNotification = {
+            id: alertId,
+            time: '当前',
+            title: '⏰ 系统自动日程提醒',
+            message: `日程 [${event.title}] 设定的提醒时间 (${event.time}) 已到达。`,
+            memberId: event.memberId === 'all' ? 'member-4' : event.memberId,
+            type: 'event',
+            timestamp: new Date().toISOString(),
+          };
+          
+          // We update alerts in a deferred timeout to avoid multiple render loop triggers
+          setTimeout(() => {
+            setAlerts((prev) => [alert, ...prev].slice(0, 50));
+          }, 10);
+
+          return { ...event, reminderSent: true };
+        }
+        return event;
+      });
+
+      if (updated) {
+        setEvents(nextEvents);
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(checkInterval);
+  }, [events, members, isInitialLoading]);
+
   // Combined debounce saver to Server (updates both local storage as a backup and the cloud server)
   useEffect(() => {
     if (isInitialLoading) return; // Prevent saving default/empty state over server database on mount
+
+    const newTimestamp = Date.now();
 
     const handler = setTimeout(async () => {
       setSyncStatus('syncing');
@@ -205,6 +376,8 @@ export default function App() {
             appSubtitle,
             appDescription,
             passcode,
+            timestamp: newTimestamp,
+            clientLastVersion: lastVersion,
           }),
         });
         if (response.ok) {
@@ -221,6 +394,7 @@ export default function App() {
     }, 1200); // 1.2s debounce to aggregate quick changes
 
     // Also write to local storage as safety backup
+    localStorage.setItem('bunny_data_timestamp', newTimestamp.toString());
     localStorage.setItem('bunny_family_members', JSON.stringify(members));
     localStorage.setItem('bunny_family_events', JSON.stringify(events));
     localStorage.setItem('bunny_family_todos', JSON.stringify(todos));
@@ -293,7 +467,7 @@ export default function App() {
   // 2. Calendar Event Handlers
   const handleAddEvent = (newEvent: Omit<CalendarEvent, 'id'>) => {
     const id = `event-${Date.now()}`;
-    const added: CalendarEvent = { ...newEvent, id };
+    const added: CalendarEvent = { ...newEvent, id, reminderSent: false };
     setEvents((prev) => [...prev, added]);
 
     // Send Alert
@@ -312,7 +486,7 @@ export default function App() {
   };
 
   const handleUpdateEvent = (updated: CalendarEvent) => {
-    setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    setEvents((prev) => prev.map((e) => (e.id === updated.id ? { ...updated, reminderSent: false } : e)));
     
     const sender = members.find((m) => m.id === activeMemberId);
     triggerToast(sender?.avatar || '🐰', '日程已修改 ✏️', `"${updated.title}" 的详情已被更新。`);
@@ -569,6 +743,27 @@ export default function App() {
 
           {/* Member selector block */}
           <div className="w-full md:w-auto flex flex-col md:flex-row md:items-center gap-4 border-t md:border-t-0 border-stone-100 pt-4 md:pt-0">
+            {/* Notification Setup Button */}
+            <button
+              onClick={requestAndTestNotification}
+              className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-xs transition-all duration-200 cursor-pointer w-full md:w-auto border-2 ${
+                notiPermission === 'granted'
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/60'
+                  : notiPermission === 'denied'
+                  ? 'bg-rose-50 text-rose-500 border-rose-200 hover:bg-rose-100/60'
+                  : 'bg-amber-50 text-amber-600 border-[#FFDAB9] hover:bg-amber-100/50'
+              }`}
+              title="设置或测试家庭日程后台弹窗提醒"
+            >
+              <Bell className={`w-4 h-4 ${notiPermission === 'granted' ? 'text-emerald-500' : 'text-amber-500 animate-swing'}`} />
+              <span>
+                {notiPermission === 'granted'
+                  ? '后台提醒已开启 (点击测试 🎵)'
+                  : notiPermission === 'denied'
+                  ? '提醒已被禁用 (点击测试 🎵)'
+                  : '开启后台弹窗提醒 🔔'}
+              </span>
+            </button>
             <button
               onClick={() => setShowExportModal(true)}
               className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FF91A4] to-[#FFC1CC] text-white font-bold text-xs shadow-sm hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-pointer w-full md:w-auto"
