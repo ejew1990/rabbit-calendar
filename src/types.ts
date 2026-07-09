@@ -11,12 +11,15 @@ export interface FamilyMember {
 export interface CalendarEvent {
   id: string;
   title: string;
-  date: string;       // YYYY-MM-DD
-  time: string;       // HH:MM (24-hour style)
+  date: string;       // YYYY-MM-DD (start date)
+  time: string;       // HH:MM (24-hour style) or '全天'
   memberId: string;   // Member ID or 'all'
   category: 'life' | 'study' | 'work' | 'important' | 'birthday' | 'other';
   description?: string;
   reminderSent?: boolean;
+  isAllDay?: boolean;  // Is it an all-day event?
+  endDate?: string;    // YYYY-MM-DD (if multi-day)
+  location?: string;   // Event location
 }
 
 export interface TodoTask {

@@ -81,11 +81,13 @@ export const INITIAL_EVENTS: CalendarEvent[] = [
   {
     id: 'event-5',
     title: '爸爸出差上海 ✈️',
-    date: '2026-07-15',
-    time: '08:00',
+    date: '2026-07-13',
+    time: '全天',
     memberId: 'member-1',
     category: 'work',
     description: '参加行业交流论坛，周五（17号）下午回。',
+    isAllDay: true,
+    endDate: '2026-07-17',
   },
   {
     id: 'event-6',

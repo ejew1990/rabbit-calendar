@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CalendarEvent, FamilyMember } from '../types';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check, MapPin } from 'lucide-react';
 import Modal from './Modal';
 
 interface CalendarViewProps {
@@ -52,6 +52,12 @@ export default function CalendarView({
   const [formMemberId, setFormMemberId] = useState(activeMemberId);
   const [formCategory, setFormCategory] = useState<CalendarEvent['category']>('life');
   const [formDescription, setFormDescription] = useState('');
+  const [formIsAllDay, setFormIsAllDay] = useState(false);
+  const [formIsMultiDay, setFormIsMultiDay] = useState(false);
+  const [formEndDate, setFormEndDate] = useState('');
+  const [formLocation, setFormLocation] = useState('');
+  const [showSmartPaste, setShowSmartPaste] = useState(false);
+  const [smartPasteText, setSmartPasteText] = useState('');
 
   // Form state for editing
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -115,7 +121,16 @@ export default function CalendarView({
   const TODAY_STR = '2026-07-08';
 
   const getEventsForDate = (dateStr: string) => {
-    return events.filter((e) => e.date === dateStr).sort((a, b) => a.time.localeCompare(b.time));
+    return events.filter((e) => {
+      if (e.endDate) {
+        return dateStr >= e.date && dateStr <= e.endDate;
+      }
+      return e.date === dateStr;
+    }).sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      return a.time.localeCompare(b.time);
+    });
   };
 
   const handleTileClick = (dateStr: string) => {
@@ -123,9 +138,59 @@ export default function CalendarView({
     setIsDetailModalOpen(true);
   };
 
+  const handleSmartParse = () => {
+    if (!smartPasteText.trim()) return;
+
+    let title = '';
+    const titleMatch = smartPasteText.match(/【([^】]+)】/) || smartPasteText.match(/「([^」]+)」/) || smartPasteText.match(/“([^”]+)”/);
+    if (titleMatch) {
+      title = titleMatch[1];
+    }
+
+    let address = '';
+    const addressMatch = smartPasteText.match(/地址：?\s*([^\s,，。！!|（(；]+)/) || smartPasteText.match(/在\s*([^\s,，。！!|]+)\s*聚餐/);
+    if (addressMatch) {
+      address = addressMatch[1];
+    }
+
+    const urlMatch = smartPasteText.match(/(https?:\/\/[^\s]+)/);
+    const link = urlMatch ? urlMatch[1] : '';
+
+    if (title) {
+      setFormTitle(`${title} 🍽️`);
+    } else {
+      const lines = smartPasteText.trim().split('\n');
+      if (lines[0] && lines[0].length < 30) {
+        setFormTitle(lines[0]);
+      }
+    }
+
+    if (address) {
+      setFormLocation(address);
+    } else if (title) {
+      setFormLocation(title);
+    }
+
+    let desc = '';
+    if (link) {
+      desc = `分享链接: ${link}`;
+    } else {
+      desc = smartPasteText.trim().substring(0, 100);
+      if (smartPasteText.length > 100) desc += '...';
+    }
+    setFormDescription(desc);
+
+    setSmartPasteText('');
+    setShowSmartPaste(false);
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
+
+    const eventTime = formIsAllDay ? '全天' : formTime;
+    const eventEndDate = formIsMultiDay ? formEndDate : undefined;
+    const eventLocation = formLocation.trim() || undefined;
 
     if (editingEventId) {
       // Update
@@ -133,10 +198,13 @@ export default function CalendarView({
         id: editingEventId,
         title: formTitle.trim(),
         date: selectedDate,
-        time: formTime,
+        time: eventTime,
         memberId: formMemberId,
         category: formCategory,
         description: formDescription.trim(),
+        isAllDay: formIsAllDay,
+        endDate: eventEndDate,
+        location: eventLocation,
       });
       setEditingEventId(null);
     } else {
@@ -144,10 +212,13 @@ export default function CalendarView({
       onAddEvent({
         title: formTitle.trim(),
         date: selectedDate,
-        time: formTime,
+        time: eventTime,
         memberId: formMemberId,
         category: formCategory,
         description: formDescription.trim(),
+        isAllDay: formIsAllDay,
+        endDate: eventEndDate,
+        location: eventLocation,
       });
     }
 
@@ -155,6 +226,12 @@ export default function CalendarView({
     setFormTitle('');
     setFormTime('10:00');
     setFormDescription('');
+    setFormIsAllDay(false);
+    setFormIsMultiDay(false);
+    setFormEndDate('');
+    setFormLocation('');
+    setShowSmartPaste(false);
+    setSmartPasteText('');
     setIsAddModalOpen(false);
   };
 
@@ -166,16 +243,28 @@ export default function CalendarView({
     setFormTime('10:00');
     setFormDescription('');
     setFormCategory('life');
+    setFormIsAllDay(false);
+    setFormIsMultiDay(false);
+    setFormEndDate(dateStr);
+    setFormLocation('');
+    setShowSmartPaste(false);
+    setSmartPasteText('');
     setIsAddModalOpen(true);
   };
 
   const startEditEvent = (event: CalendarEvent) => {
     setEditingEventId(event.id);
     setFormTitle(event.title);
-    setFormTime(event.time);
+    setFormTime(event.isAllDay ? '10:00' : event.time);
     setFormMemberId(event.memberId);
     setFormCategory(event.category);
     setFormDescription(event.description || '');
+    setFormIsAllDay(!!event.isAllDay);
+    setFormIsMultiDay(!!event.endDate && event.endDate !== event.date);
+    setFormEndDate(event.endDate || event.date);
+    setFormLocation(event.location || '');
+    setShowSmartPaste(false);
+    setSmartPasteText('');
     setIsDetailModalOpen(false);
     setIsAddModalOpen(true);
   };
@@ -431,15 +520,59 @@ export default function CalendarView({
                     </div>
 
                     <div>
-                      <h4 className="text-sm font-bold text-[#6B4F4F] flex items-center gap-1.5">
+                      <h4 className="text-sm font-bold text-[#6B4F4F] flex items-center flex-wrap gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-[#FF91A4] shrink-0" />
-                        <span className="bg-white/80 px-2 py-0.5 rounded-lg text-xs font-bold font-mono">
-                          {event.time}
-                        </span>
+                        {event.isAllDay ? (
+                          <span className="bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg text-[10px] font-black">
+                            全天
+                          </span>
+                        ) : (
+                          <span className="bg-white/80 px-2 py-0.5 rounded-lg text-xs font-bold font-mono">
+                            {event.time}
+                          </span>
+                        )}
+                        {event.endDate && event.endDate !== event.date ? (
+                          <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-amber-100">
+                            🗓️ {event.date.substring(5)} 至 {event.endDate.substring(5)}
+                          </span>
+                        ) : null}
                         <span>{event.title}</span>
                       </h4>
+                      {event.location && (
+                        <div className="text-xs text-stone-700 font-semibold mt-1.5 pl-5 flex flex-wrap items-center gap-1.5 bg-white/50 p-1.5 rounded-xl border border-stone-200/40">
+                          <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                          <span className="truncate max-w-[180px] text-[11px]" title={event.location}>{event.location}</span>
+                          <span className="text-[10px] text-[#A68F8F]">| 🗺️ 搜索：</span>
+                          <div className="flex gap-1">
+                            <a
+                              href={`https://map.baidu.com/search?query=${encodeURIComponent(event.location)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md font-bold transition-colors"
+                            >
+                              百度
+                            </a>
+                            <a
+                              href={`https://www.amap.com/search?query=${encodeURIComponent(event.location)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-md font-bold transition-colors"
+                            >
+                              高德
+                            </a>
+                            <a
+                              href={`https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(event.location)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-md font-bold transition-colors"
+                            >
+                              点评
+                            </a>
+                          </div>
+                        </div>
+                      )}
                       {event.description && (
-                        <p className="text-xs text-[#A68F8F] font-medium mt-1 pl-5 border-l-2 border-[#FFDAB9]">
+                        <p className="text-xs text-[#A68F8F] font-medium mt-1.5 pl-5 border-l-2 border-[#FFDAB9]">
                           {event.description}
                         </p>
                       )}
@@ -483,31 +616,128 @@ export default function CalendarView({
             />
           </div>
 
+          {/* Smart Clipboard Paste Module */}
+          <div className="bg-[#FFF9F2] rounded-2xl border border-dashed border-[#FFDAB9] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#6B4F4F] flex items-center gap-1">
+                📋 大众点评/美团/地图分享 智能导入助手
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSmartPaste(!showSmartPaste)}
+                className="text-[10px] font-black text-[#FF91A4] hover:underline cursor-pointer bg-white px-2 py-0.5 rounded-lg border border-[#FFDAB9]"
+              >
+                {showSmartPaste ? '收起面板 ⬆️' : '试试智能解析 ✨'}
+              </button>
+            </div>
+            {showSmartPaste && (
+              <div className="mt-2.5 space-y-2">
+                <textarea
+                  value={smartPasteText}
+                  onChange={(e) => setSmartPasteText(e.target.value)}
+                  placeholder="在此直接粘贴从大众点评、美团、百度地图、高德地图等App复制分享的文案、链接，一键提取标题、地址和备注哦！"
+                  rows={2}
+                  className="w-full p-2 bg-white rounded-xl border border-[#FFDAB9] focus:outline-hidden text-xs text-stone-800 font-semibold"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmartPasteText('');
+                      setShowSmartPaste(false);
+                    }}
+                    className="px-2 py-1 text-[10px] bg-stone-100 text-stone-500 rounded-lg font-bold"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSmartParse}
+                    className="px-3 py-1 text-[10px] bg-[#FF91A4] text-white rounded-lg font-bold hover:opacity-90 shadow-xs"
+                  >
+                    🚀 智能一键解析填入
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* All day / Multi-day checkboxes */}
+          <div className="flex gap-4 p-3 bg-[#FFF9F2] rounded-2xl border border-[#FFDAB9]/50">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#6B4F4F]">
+              <input
+                type="checkbox"
+                checked={formIsAllDay}
+                onChange={(e) => setFormIsAllDay(e.target.checked)}
+                className="rounded-md border-2 border-[#FFDAB9] text-[#FF91A4] focus:ring-[#FF91A4] w-4 h-4 cursor-pointer accent-[#FF91A4]"
+              />
+              <span className="flex items-center gap-0.5">🌅 全天事件</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#6B4F4F]">
+              <input
+                type="checkbox"
+                checked={formIsMultiDay}
+                onChange={(e) => {
+                  setFormIsMultiDay(e.target.checked);
+                  if (e.target.checked && !formEndDate) {
+                    setFormEndDate(selectedDate);
+                  }
+                }}
+                className="rounded-md border-2 border-[#FFDAB9] text-[#FF91A4] focus:ring-[#FF91A4] w-4 h-4 cursor-pointer accent-[#FF91A4]"
+              />
+              <span className="flex items-center gap-0.5">🗓️ 多天日程 (跨日期)</span>
+            </label>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-bold text-[#6B4F4F] mb-1">
-                选择日期
+            <div className={formIsMultiDay ? "col-span-1" : "col-span-2 sm:col-span-1"}>
+              <label className="block text-xs font-bold text-[#6B4F4F] mb-1">
+                {formIsMultiDay ? '开始日期 📅' : '选择日期 📅'}
               </label>
               <input
                 type="date"
                 required
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  if (formIsMultiDay && (!formEndDate || formEndDate < e.target.value)) {
+                    setFormEndDate(e.target.value);
+                  }
+                }}
                 className="w-full px-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
               />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-[#6B4F4F] mb-1">
-                具体时间
-              </label>
-              <input
-                type="time"
-                required
-                value={formTime}
-                onChange={(e) => setFormTime(e.target.value)}
-                className="w-full px-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
-              />
-            </div>
+
+            {formIsMultiDay && (
+              <div>
+                <label className="block text-xs font-bold text-[#6B4F4F] mb-1">
+                  结束日期 🗓️
+                </label>
+                <input
+                  type="date"
+                  required
+                  min={selectedDate}
+                  value={formEndDate}
+                  onChange={(e) => setFormEndDate(e.target.value)}
+                  className="w-full px-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
+                />
+              </div>
+            )}
+
+            {!formIsAllDay && (
+              <div className={formIsMultiDay ? "col-span-2" : "col-span-2 sm:col-span-1"}>
+                <label className="block text-xs font-bold text-[#6B4F4F] mb-1">
+                  具体时间 ⏰
+                </label>
+                <input
+                  type="time"
+                  required={!formIsAllDay}
+                  value={formTime}
+                  onChange={(e) => setFormTime(e.target.value)}
+                  className="w-full px-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
+                />
+              </div>
+            )}
           </div>
 
           <div>
@@ -574,6 +804,23 @@ export default function CalendarView({
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1 flex items-center gap-1">
+              <span>活动地点 📍</span>
+              <span className="text-[10px] text-stone-400 font-normal">（选填，支持一键调用高德/百度/大众点评搜索）</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={formLocation}
+                onChange={(e) => setFormLocation(e.target.value)}
+                placeholder="例如：聚点串吧中关村店、奥森公园北门 🗺️"
+                className="w-full pl-10 pr-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
+              />
+              <MapPin className="w-4 h-4 text-rose-400 absolute left-3.5 top-3 shrink-0" />
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FamilyMember, CalendarEvent, TodoTask, AlertNotification } from './types';
 import {
   INITIAL_MEMBERS,
@@ -54,6 +54,28 @@ export default function App() {
   });
   const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
 
+  // ==========================================
+  // 🔑 家庭暗号安全锁配置 (可以直接在此修改默认暗号)
+  // ==========================================
+  // 💡 默认为 '1234'。首次访问的用户都必须输入这个暗号才能解锁。
+  // 如果您想设置其他的专属暗号，只需把这里的 '1234' 改成您的暗号，然后推送到 GitHub 部署即可！
+  // 如果设置为空字符串 ''，则代表不设暗号、完全公开。
+  const GLOBAL_DEFAULT_PASSCODE = '咚咚7777';
+
+  // Passcode Protection States
+  const [passcode, setPasscode] = useState(() => {
+    const saved = localStorage.getItem('bunny_family_passcode');
+    return saved !== null ? saved : GLOBAL_DEFAULT_PASSCODE;
+  });
+  const [isUnlocked, setIsUnlocked] = useState(() => {
+    const savedPasscode = localStorage.getItem('bunny_family_passcode');
+    const currentPasscode = savedPasscode !== null ? savedPasscode : GLOBAL_DEFAULT_PASSCODE;
+    if (!currentPasscode.trim()) return true; // Default unlocked if no passcode set
+    return sessionStorage.getItem('bunny_family_unlocked') === 'true';
+  });
+  const [inputPasscode, setInputPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
+
   // Toast Notification State
   const [toast, setToast] = useState<{ id: string; avatar: string; message: string; title: string } | null>(null);
 
@@ -92,6 +114,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('bunny_app_description', appDescription);
   }, [appDescription]);
+
+  useEffect(() => {
+    localStorage.setItem('bunny_family_passcode', passcode);
+  }, [passcode]);
 
   // Trigger custom toast notification
   const triggerToast = (avatar: string, title: string, message: string) => {
@@ -272,6 +298,80 @@ export default function App() {
   };
 
   const activeSpokesperson = members.find((m) => m.id === activeMemberId) || members[0];
+
+  const handleUnlockSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputPasscode.trim() === passcode.trim()) {
+      sessionStorage.setItem('bunny_family_unlocked', 'true');
+      setIsUnlocked(true);
+      setPasscodeError(false);
+      setInputPasscode('');
+      triggerToast('🔑', '对上暗号啦！', '欢迎回家~ 🏡');
+    } else {
+      setPasscodeError(true);
+    }
+  };
+
+  if (passcode.trim() !== '' && !isUnlocked) {
+    return (
+      <div className="bg-[#FFF9F2] min-h-screen font-sans flex items-center justify-center p-4 text-[#6B4F4F]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-white rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border-4 border-[#FFDAB9] text-center relative"
+        >
+          {/* Bunny Decor */}
+          <div className="w-20 h-20 bg-[#FFE4E6] rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border-2 border-[#FFB3C1] relative">
+            🐰
+            <span className="absolute -top-1 -right-1 text-base">🔑</span>
+          </div>
+
+          <h1 className="text-2xl font-black tracking-tight mb-2">🥕 兔兔家园暗号确认</h1>
+          <p className="text-xs text-[#A68F8F] font-bold mb-6">
+            本页已被主人设为私密日历。请输入专属的家庭暗号进入小窝~
+          </p>
+
+          <form onSubmit={handleUnlockSubmit} className="space-y-4">
+            <div className="relative">
+              <input
+                type="text"
+                required
+                value={inputPasscode}
+                onChange={(e) => {
+                  setInputPasscode(e.target.value);
+                  setPasscodeError(false);
+                }}
+                placeholder="请输入家庭暗号 💬"
+                className={`w-full px-5 py-3.5 bg-[#FFF9F2] rounded-2xl border-2 ${
+                  passcodeError ? 'border-red-400 animate-bounce' : 'border-[#FFDAB9]'
+                } focus:outline-hidden focus:border-[#FF91A4] text-center text-stone-800 text-base font-black tracking-wide`}
+              />
+              {passcodeError && (
+                <p className="text-[11px] text-red-500 font-bold mt-1.5 flex items-center justify-center gap-1">
+                  ❌ 暗号不对哦，再认真想一想呢？
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#FF91A4] to-[#FFC1CC] text-white font-black text-sm shadow-md hover:opacity-95 hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <span>对暗号 🥕</span>
+            </button>
+          </form>
+
+          {/* Quick tips */}
+          <div className="mt-8 pt-4 border-t border-[#FFF0F0] text-[11px] text-[#A68F8F] font-semibold leading-relaxed">
+            <p>💡 这是自定义的家庭保护屏障，不需要花费一分钱。</p>
+            <p className="mt-1">
+              如果你是管理员，可在原本的 AI Studio 预览窗口中，点击标题旁边的修改按钮，查看或修改你设置的暗号。
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#FFF9F2] min-h-screen font-sans flex flex-col p-4 sm:p-6 lg:p-8 text-[#6B4F4F]">
@@ -475,17 +575,29 @@ export default function App() {
                   <p className="text-xs text-[#A68F8F] font-bold mb-3">
                     我已经为你全自动打包了整个日历的代码包，里面包含运行本应用所需的全部设置。
                   </p>
-                  <a
-                    href="/rabbit-calendar.tar.gz"
-                    download="rabbit-calendar.tar.gz"
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FFF0F0] border-2 border-[#FFDAB9] hover:bg-[#FFC1CC]/20 text-[#FF91A4] hover:text-[#FF6B8B] font-black text-xs transition-all duration-200 cursor-pointer shadow-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>立即下载代码包 (rabbit-calendar.tar.gz)</span>
-                  </a>
-                  <p className="text-[10px] text-[#A68F8F] font-bold mt-2">
-                    💡 提示：下载后双击即可在电脑上解压出一个名为 <code className="bg-stone-100 px-1 py-0.5 rounded font-mono">rabbit-calendar</code> 的文件夹，里面就是我们的全套代码。
-                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <a
+                      href="/rabbit-calendar.zip"
+                      download="rabbit-calendar.zip"
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FFE4E6] border-2 border-[#FFB3C1] hover:bg-[#FFC1CC]/40 text-[#FF5A79] hover:text-[#E03B5A] font-black text-xs transition-all duration-200 cursor-pointer shadow-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>📁 推荐：下载 ZIP 压缩包 (rabbit-calendar.zip)</span>
+                    </a>
+                    <a
+                      href="/rabbit-calendar.tar.gz"
+                      download="rabbit-calendar.tar.gz"
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FFF0F0] border-2 border-[#FFDAB9] hover:bg-[#FFC1CC]/20 text-[#FF91A4] hover:text-[#FF6B8B] font-black text-xs transition-all duration-200 cursor-pointer shadow-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>📦 备用：下载 TAR.GZ 压缩包 (rabbit-calendar.tar.gz)</span>
+                    </a>
+                  </div>
+                  <div className="text-[10px] text-[#A68F8F] font-bold mt-2.5 space-y-1 bg-stone-50 p-3 rounded-xl border border-stone-100">
+                    <p className="text-stone-700">💡 提示：Windows/Mac 系统都原生支持解压 <code className="bg-stone-200/60 px-1 py-0.5 rounded font-mono text-xs text-stone-800">.zip</code> 文件，推荐首选下载 ZIP 文件！</p>
+                    <p className="text-amber-600 font-bold">⚠️ 重要提示（如果无法点击下载）：</p>
+                    <p className="text-stone-500 font-normal">由于预览界面的安全限制，直接在左侧预览框中点击下载可能会被浏览器阻止。请点击预览框右上角的 <strong className="text-stone-700">“Open in New Tab” (在新标签页中打开)</strong> 图标，在独立的新标签页中点击下载，或直接在网址末尾加上 <code className="bg-stone-200/60 px-1.5 py-0.5 rounded font-mono text-xs text-stone-800">/rabbit-calendar.zip</code> 即可完美极速下载！</p>
+                  </div>
                 </div>
               </div>
 
@@ -563,6 +675,10 @@ export default function App() {
           onSubmit={(e) => {
             e.preventDefault();
             setIsEditTitleModalOpen(false);
+            if (passcode.trim() !== '') {
+              sessionStorage.setItem('bunny_family_unlocked', 'true');
+              setIsUnlocked(true);
+            }
             triggerToast('✏️', '基本资料已修改', '日历的标题和标语已更新啦！');
           }}
           className="space-y-4"
@@ -611,20 +727,54 @@ export default function App() {
             />
           </div>
 
-          <div className="pt-2 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsEditTitleModalOpen(false)}
-              className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-[#6B4F4F] rounded-2xl text-sm font-bold transition-all cursor-pointer"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-[#FF91A4] hover:bg-[#E07080] text-white rounded-2xl text-sm font-bold shadow-xs border-b-2 border-[#C05D6D] hover:border-b-0 transition-all cursor-pointer"
-            >
-              保存修改 💾
-            </button>
+          <div className="border-t border-[#FFDAB9]/40 pt-3">
+            <label className="block text-sm font-bold text-[#6B4F4F] mb-1 flex justify-between items-center">
+              <span className="flex items-center gap-1">🔑 设定家庭暗号 (安全锁)</span>
+              <span className="text-[10px] text-[#A68F8F] font-normal">留空代表公开、不设密码</span>
+            </label>
+            <input
+              type="text"
+              maxLength={20}
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              placeholder="例如：1234 或 小兔子乖乖"
+              className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
+            />
+            <p className="text-[10px] text-[#A68F8F] mt-1.5 leading-relaxed font-semibold">
+              🔒 设定暗号后，他人必须输入正确的暗号方可访问该网页，可以完美隔绝未受邀访客！
+            </p>
+          </div>
+
+          <div className="pt-2 flex justify-between items-center gap-3">
+            {passcode.trim() !== '' && (
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.removeItem('bunny_family_unlocked');
+                  setIsUnlocked(false);
+                  setIsEditTitleModalOpen(false);
+                  triggerToast('🔒', '已锁定页面', '日历已进入加密锁定状态。');
+                }}
+                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl text-xs font-bold transition-all cursor-pointer border border-rose-200"
+              >
+                🔒 立即锁定测试
+              </button>
+            )}
+            <div className="flex gap-3 ml-auto">
+              <button
+                type="button"
+                onClick={() => setIsEditTitleModalOpen(false)}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-[#6B4F4F] rounded-2xl text-sm font-bold transition-all cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 bg-[#FF91A4] hover:bg-[#E07080] text-white rounded-2xl text-sm font-bold shadow-xs border-b-2 border-[#C05D6D] hover:border-b-0 transition-all cursor-pointer"
+              >
+                保存修改 💾
+              </button>
+            </div>
           </div>
         </form>
       </Modal>
