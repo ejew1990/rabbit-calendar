@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FamilyMember, CalendarEvent, TodoTask, AlertNotification } from './types';
 import {
   INITIAL_MEMBERS,
@@ -110,7 +110,8 @@ export default function App() {
     return localStorage.getItem('bunny_app_subtitle') || '共享小窝 🐰';
   });
   const [appDescription, setAppDescription] = useState(() => {
-    return localStorage.getItem('bunny_app_description') || '同步蜜糖家庭日程，管理共同待办，随时拉响萌趣提醒 ✨';
+    const saved = localStorage.getItem('bunny_app_description');
+    return saved !== null ? saved : '同步家庭日程，管理共同待办，随时拉响萌趣提醒 ✨';
   });
   const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
 
@@ -187,6 +188,33 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
 
+  // Keep a reference to the latest state to avoid stale closure issues in async callbacks
+  const stateRef = useRef({
+    members,
+    events,
+    todos,
+    alerts,
+    activeMemberId,
+    appTitle,
+    appSubtitle,
+    appDescription,
+    passcode,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      members,
+      events,
+      todos,
+      alerts,
+      activeMemberId,
+      appTitle,
+      appSubtitle,
+      appDescription,
+      passcode,
+    };
+  }, [members, events, todos, alerts, activeMemberId, appTitle, appSubtitle, appDescription, passcode]);
+
   // Load initial data from server on mount
   useEffect(() => {
     const initData = async () => {
@@ -201,8 +229,16 @@ export default function App() {
           const localTimestamp = localTimestampStr ? parseInt(localTimestampStr, 10) : 0;
           const serverTimestamp = data.timestamp || 0;
 
-          if (localTimestamp > serverTimestamp) {
-            console.log('Local storage has newer changes than server. Uploading local state to heal server data...');
+          // Check if local storage actually contains user-created items
+          const hasLocalData = (events && events.length > 0) || (todos && todos.length > 0) || (alerts && alerts.length > 0);
+          
+          // Check if the server database has empty lists (e.g., from template reset)
+          const serverIsEmpty = (!data.events || data.events.length === 0) && 
+                                (!data.todos || data.todos.length === 0) && 
+                                (!data.alerts || data.alerts.length === 0);
+
+          if (localTimestamp > serverTimestamp || (hasLocalData && serverIsEmpty)) {
+            console.log('Local storage has newer changes than server or server database is empty. Uploading local state to heal server data...');
             await fetch('/api/sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -216,7 +252,7 @@ export default function App() {
                 appSubtitle,
                 appDescription,
                 passcode,
-                timestamp: localTimestamp,
+                timestamp: Math.max(localTimestamp, Date.now()),
                 clientLastVersion: serverTimestamp,
               }),
             });
@@ -263,6 +299,39 @@ export default function App() {
             const pullRes = await fetch('/api/sync');
             if (pullRes.ok && active) {
               const data = await pullRes.json();
+
+              // Protection: If the server database is completely empty (e.g. due to server restart/wipe),
+              // but we have active data in our current state, do NOT let the empty database overwrite our data.
+              // Instead, we should trigger a push to restore the server's database!
+              const currentHasData = stateRef.current.events.length > 0 || stateRef.current.todos.length > 0 || stateRef.current.alerts.length > 0;
+              const serverIsEmpty = (!data.events || data.events.length === 0) && 
+                                    (!data.todos || data.todos.length === 0) && 
+                                    (!data.alerts || data.alerts.length === 0);
+              
+              if (currentHasData && serverIsEmpty) {
+                console.warn("Detected server restart/wipe with empty data. Rejecting sync and pushing local state to restore server.");
+                await fetch('/api/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    members: stateRef.current.members,
+                    events: stateRef.current.events,
+                    todos: stateRef.current.todos,
+                    alerts: stateRef.current.alerts,
+                    activeMemberId: stateRef.current.activeMemberId,
+                    appTitle: stateRef.current.appTitle,
+                    appSubtitle: stateRef.current.appSubtitle,
+                    appDescription: stateRef.current.appDescription,
+                    passcode: stateRef.current.passcode,
+                    timestamp: Date.now(),
+                    clientLastVersion: data.version,
+                  }),
+                });
+                setLastVersion(Date.now());
+                setSyncStatus('synced');
+                return;
+              }
+
               setMembers(data.members);
               setEvents(data.events);
               setTodos(data.todos);
@@ -404,6 +473,22 @@ export default function App() {
     localStorage.setItem('bunny_app_subtitle', appSubtitle);
     localStorage.setItem('bunny_app_description', appDescription);
     localStorage.setItem('bunny_family_passcode', passcode);
+
+    // Create a persistent history backup in local storage that is NEVER overwritten by empty arrays
+    if (events.length > 0 || todos.length > 0 || alerts.length > 0) {
+      localStorage.setItem('bunny_family_data_backup', JSON.stringify({
+        members,
+        events,
+        todos,
+        alerts,
+        activeMemberId,
+        appTitle,
+        appSubtitle,
+        appDescription,
+        passcode,
+        timestamp: newTimestamp
+      }));
+    }
 
     return () => clearTimeout(handler);
   }, [members, events, todos, alerts, activeMemberId, appTitle, appSubtitle, appDescription, passcode, isInitialLoading]);
@@ -692,6 +777,74 @@ export default function App() {
 
       <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 flex-1">
         
+        {/* Urgent Recovery Alert Banner */}
+        {typeof window !== "undefined" && localStorage.getItem("bunny_family_data_backup") && (events.length === 0 || todos.length === 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-amber-50 border-4 border-amber-300 rounded-[2rem] p-5 sm:p-6 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 border-b-8 border-b-amber-400"
+          >
+            <div className="flex items-center gap-3.5 text-left">
+              <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-2xl shrink-0 animate-bounce">
+                🪄
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-amber-900 text-sm sm:text-base flex items-center gap-1.5">
+                  发现可恢复的家庭数据备份！ ✨
+                </h3>
+                <p className="text-xs text-amber-700 font-semibold mt-1 leading-relaxed">
+                  检测到您之前手动添加过日程/待办，但当前由于服务器重启已被重设。我们可以立即帮您一键还原！
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const savedBackup = localStorage.getItem("bunny_family_data_backup");
+                  if (savedBackup) {
+                    const backup = JSON.parse(savedBackup);
+                    if (backup.members && backup.members.length > 0) setMembers(backup.members);
+                    if (backup.events) setEvents(backup.events);
+                    if (backup.todos) setTodos(backup.todos);
+                    if (backup.alerts) setAlerts(backup.alerts);
+                    if (backup.appTitle) setAppTitle(backup.appTitle);
+                    if (backup.appSubtitle) setAppSubtitle(backup.appSubtitle);
+                    if (backup.appDescription) setAppDescription(backup.appDescription);
+                    if (backup.passcode) setPasscode(backup.passcode);
+                    
+                    setSyncStatus("syncing");
+                    await fetch("/api/sync", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        members: backup.members,
+                        events: backup.events,
+                        todos: backup.todos,
+                        alerts: backup.alerts,
+                        activeMemberId: backup.activeMemberId || activeMemberId,
+                        appTitle: backup.appTitle || appTitle,
+                        appSubtitle: backup.appSubtitle || appSubtitle,
+                        appDescription: backup.appDescription || appDescription,
+                        passcode: backup.passcode || passcode,
+                        timestamp: Date.now(),
+                        clientLastVersion: 0,
+                      }),
+                    });
+                    triggerToast("🎉", "数据完美还原！", "所有日程、待办与成员资料已安全找回并推送到服务器。");
+                  }
+                } catch (e) {
+                  console.error("Failed to restore backup:", e);
+                  triggerToast("❌", "还原失败", "解析备份数据时发生错误。");
+                }
+              }}
+              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95 shrink-0"
+            >
+              🪄 立即一键恢复我的所有数据
+            </button>
+          </motion.div>
+        )}
+
         {/* Header Block */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white rounded-[2rem] p-5 sm:p-6 shadow-sm border-2 border-[#FFDAB9]">
           <div className="flex items-center gap-3.5">
@@ -1071,7 +1224,7 @@ export default function App() {
               rows={3}
               value={appDescription}
               onChange={(e) => setAppDescription(e.target.value)}
-              placeholder="同步蜜糖家庭日程，管理共同待办，随时拉响萌趣提醒 ✨"
+              placeholder="同步家庭日程，管理共同待办，随时拉响萌趣提醒 ✨"
               className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold resize-none"
             />
           </div>
@@ -1093,6 +1246,67 @@ export default function App() {
               🔒 设定暗号后，他人必须输入正确的暗号方可访问该网页，可以完美隔绝未受邀访客！
             </p>
           </div>
+
+          {/* Recovery backup block */}
+          {typeof window !== 'undefined' && localStorage.getItem('bunny_family_data_backup') && (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-3.5 space-y-2 mt-2">
+              <div className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                <Sparkles className="w-4.5 h-4.5 text-amber-500 animate-pulse" />
+                <span>发现本地自动备份！</span>
+              </div>
+              <p className="text-[10px] text-amber-700 font-semibold leading-relaxed">
+                如果您输入的数据因网络或容器重启而清空，可一键将其还原并重新推送到服务器上哦。
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const savedBackup = localStorage.getItem('bunny_family_data_backup');
+                    if (savedBackup) {
+                      const backup = JSON.parse(savedBackup);
+                      if (backup.members && backup.members.length > 0) setMembers(backup.members);
+                      if (backup.events) setEvents(backup.events);
+                      if (backup.todos) setTodos(backup.todos);
+                      if (backup.alerts) setAlerts(backup.alerts);
+                      if (backup.appTitle) setAppTitle(backup.appTitle);
+                      if (backup.appSubtitle) setAppSubtitle(backup.appSubtitle);
+                      if (backup.appDescription) setAppDescription(backup.appDescription);
+                      if (backup.passcode) setPasscode(backup.passcode);
+                      
+                      // Push to server immediately
+                      setSyncStatus('syncing');
+                      await fetch('/api/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          members: backup.members,
+                          events: backup.events,
+                          todos: backup.todos,
+                          alerts: backup.alerts,
+                          activeMemberId: backup.activeMemberId || activeMemberId,
+                          appTitle: backup.appTitle || appTitle,
+                          appSubtitle: backup.appSubtitle || appSubtitle,
+                          appDescription: backup.appDescription || appDescription,
+                          passcode: backup.passcode || passcode,
+                          timestamp: Date.now(),
+                          clientLastVersion: 0,
+                        }),
+                      });
+                      
+                      setIsEditTitleModalOpen(false);
+                      triggerToast('🎉', '备份已成功还原！', '所有日程、待办与成员资料已重新推送到服务器。');
+                    }
+                  } catch (e) {
+                    console.error('Failed to restore backup:', e);
+                    triggerToast('❌', '还原失败', '解析备份数据时发生未知错误。');
+                  }
+                }}
+                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                🪄 立即一键恢复我的所有数据
+              </button>
+            </div>
+          )}
 
           <div className="pt-2 flex justify-between items-center gap-3">
             {passcode.trim() !== '' && (

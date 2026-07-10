@@ -38,11 +38,32 @@ export default function CalendarView({
   onUpdateEvent,
   onDeleteEvent,
 }: CalendarViewProps) {
-  // Anchoring the default view around July 2026 (the current local year/month)
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(6); // 0-indexed, so 6 is July
+  // Get dynamic local dates so the calendar automatically adapts to real time
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const date = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${date}`;
+  };
+  const TODAY_STR = getTodayStr();
 
-  const [selectedDate, setSelectedDate] = useState<string>('2026-07-08'); // Selected tile
+  const getTodayChineseLabel = (dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const weekDayStr = weekDays[d.getDay()];
+      return `${parts[0]}年${parts[1]}月${parts[2]}日 ${weekDayStr}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth()); // 0-indexed
+
+  const [selectedDate, setSelectedDate] = useState<string>(TODAY_STR); // Selected tile
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -58,9 +79,39 @@ export default function CalendarView({
   const [formLocation, setFormLocation] = useState('');
   const [showSmartPaste, setShowSmartPaste] = useState(false);
   const [smartPasteText, setSmartPasteText] = useState('');
+  const [formRecurrence, setFormRecurrence] = useState<'none' | 'daily' | 'weekly' | 'custom_weekly'>('none');
+  const [formRecurrenceDays, setFormRecurrenceDays] = useState<number[]>([]);
 
   // Form state for editing
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+
+  // Helper to safely get the day of the week in local time (0 is Sunday, 1 is Monday ... 6 is Saturday)
+  const getDayOfWeek = (dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      return d.getDay();
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  // Helper to get beautiful recurrence label for displays
+  const getRecurrenceLabel = (event: CalendarEvent) => {
+    if (!event.recurrence || event.recurrence === 'none') return null;
+    if (event.recurrence === 'daily') return '🔁 每天重复';
+    if (event.recurrence === 'weekly') {
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      const dayName = days[getDayOfWeek(event.date)];
+      return `🔁 每周 ${dayName}`;
+    }
+    if (event.recurrence === 'custom_weekly' && event.recurrenceDays) {
+      const days = ['日', '一', '二', '三', '四', '五', '六'];
+      const dayNames = event.recurrenceDays.map(d => days[d]).join('、');
+      return `🔁 每周(${dayNames})重复`;
+    }
+    return null;
+  };
 
   // Month navigation
   const prevMonth = () => {
@@ -117,14 +168,37 @@ export default function CalendarView({
     });
   }
 
-  // Today is 2026-07-08
-  const TODAY_STR = '2026-07-08';
+  // Today's date is dynamically computed at the component level (TODAY_STR)
 
   const getEventsForDate = (dateStr: string) => {
     return events.filter((e) => {
+      // Event cannot start after the target date
+      if (dateStr < e.date) return false;
+
+      // Handle recurrence
+      if (e.recurrence && e.recurrence !== 'none') {
+        // If there's an end date (the recurrence end limit), target date cannot be after it
+        if (e.endDate && dateStr > e.endDate) return false;
+
+        if (e.recurrence === 'daily') {
+          return true;
+        }
+
+        if (e.recurrence === 'weekly') {
+          return getDayOfWeek(e.date) === getDayOfWeek(dateStr);
+        }
+
+        if (e.recurrence === 'custom_weekly') {
+          return e.recurrenceDays?.includes(getDayOfWeek(dateStr));
+        }
+      }
+
+      // Handle multi-day span (non-recurring)
       if (e.endDate) {
         return dateStr >= e.date && dateStr <= e.endDate;
       }
+
+      // Standard single date matching
       return e.date === dateStr;
     }).sort((a, b) => {
       if (a.isAllDay && !b.isAllDay) return -1;
@@ -205,6 +279,8 @@ export default function CalendarView({
         isAllDay: formIsAllDay,
         endDate: eventEndDate,
         location: eventLocation,
+        recurrence: formRecurrence,
+        recurrenceDays: formRecurrence === 'custom_weekly' ? formRecurrenceDays : undefined,
       });
       setEditingEventId(null);
     } else {
@@ -219,6 +295,8 @@ export default function CalendarView({
         isAllDay: formIsAllDay,
         endDate: eventEndDate,
         location: eventLocation,
+        recurrence: formRecurrence,
+        recurrenceDays: formRecurrence === 'custom_weekly' ? formRecurrenceDays : undefined,
       });
     }
 
@@ -232,6 +310,8 @@ export default function CalendarView({
     setFormLocation('');
     setShowSmartPaste(false);
     setSmartPasteText('');
+    setFormRecurrence('none');
+    setFormRecurrenceDays([]);
     setIsAddModalOpen(false);
   };
 
@@ -249,6 +329,8 @@ export default function CalendarView({
     setFormLocation('');
     setShowSmartPaste(false);
     setSmartPasteText('');
+    setFormRecurrence('none');
+    setFormRecurrenceDays([]);
     setIsAddModalOpen(true);
   };
 
@@ -265,6 +347,8 @@ export default function CalendarView({
     setFormLocation(event.location || '');
     setShowSmartPaste(false);
     setSmartPasteText('');
+    setFormRecurrence(event.recurrence || 'none');
+    setFormRecurrenceDays(event.recurrenceDays || []);
     setIsDetailModalOpen(false);
     setIsAddModalOpen(true);
   };
@@ -319,6 +403,155 @@ export default function CalendarView({
             <ChevronRight className="w-5 h-5" />
           </button>
         </div>
+      </div>
+
+      {/* 今日大事件 (Today's Big Events) */}
+      <div className="bg-[#FFF9F2] rounded-3xl p-5 shadow-xs border-2 border-[#FFDAB9] flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🌟</span>
+            <div>
+              <h3 className="text-sm font-black text-[#6B4F4F] flex items-center gap-1.5">
+                今日家庭日程 (大事件)
+                <span className="bg-[#FF91A4] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {getEventsForDate(TODAY_STR).length} 项安排
+                </span>
+              </h3>
+              <p className="text-[10px] text-[#A68F8F] font-bold">
+                {getTodayChineseLabel(TODAY_STR)} (手机竖屏看这里超方便哦！📱)
+              </p>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => openAddModal(TODAY_STR)}
+            className="text-xs bg-[#FF91A4] hover:bg-[#E07080] text-white px-3 py-1.5 rounded-xl font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>添加今天日程</span>
+          </button>
+        </div>
+
+        {getEventsForDate(TODAY_STR).length === 0 ? (
+          <div className="bg-white rounded-2xl p-4 text-center border border-[#FFDAB9]/40 py-6">
+            <span className="text-2xl block mb-1">🐰💤</span>
+            <p className="text-xs text-[#A68F8F] font-bold">
+              今天全家没有特定安排，是温暖惬意的一天哦~
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {getEventsForDate(TODAY_STR).map((event) => {
+              const member = members.find((m) => m.id === event.memberId);
+              const catColor = CATEGORY_COLORS[event.category] || CATEGORY_COLORS.other;
+
+              return (
+                <div
+                  key={event.id}
+                  style={{ backgroundColor: catColor.bg, borderColor: catColor.border }}
+                  className="p-3.5 rounded-2xl border-2 shadow-xs transition-all flex flex-col gap-2 group/today-item"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base shrink-0">
+                        {member ? member.avatar : '🏡'}
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-lg text-white" style={{ backgroundColor: member ? member.borderColor : '#FF91A4' }}>
+                          {member ? member.name : '全家'}
+                        </span>
+                        <span className="text-[10px] text-[#A68F8F] font-bold">
+                          {CATEGORY_LABELS[event.category]}
+                        </span>
+                        {getRecurrenceLabel(event) && (
+                          <span className="text-[10px] bg-amber-100 text-amber-700 font-black px-1.5 py-0.5 rounded-lg border border-amber-200">
+                            {getRecurrenceLabel(event)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick actions for Today's Event */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => startEditEvent(event)}
+                        className="p-1 rounded-md text-stone-500 hover:bg-stone-100 hover:text-[#6B4F4F]"
+                        title="编辑日程"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`确定要删除此项日程 "${event.title}" 吗？`)) {
+                            onDeleteEvent(event.id);
+                          }
+                        }}
+                        className="p-1 rounded-md text-red-400 hover:bg-red-50 hover:text-red-600"
+                        title="删除日程"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-black text-[#6B4F4F] flex items-center flex-wrap gap-1">
+                      <Clock className="w-3 h-3 text-[#FF91A4] shrink-0" />
+                      {event.isAllDay ? (
+                        <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-md text-[9px] font-black shrink-0">
+                          全天
+                        </span>
+                      ) : (
+                        <span className="bg-white/80 px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono shrink-0">
+                          {event.time}
+                        </span>
+                      )}
+                      {event.endDate && event.endDate !== event.date ? (
+                        <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-md text-[9px] font-bold border border-amber-100 shrink-0">
+                          🗓️ 跨期
+                        </span>
+                      ) : null}
+                      <span className="font-bold text-stone-800 break-all">{event.title}</span>
+                    </h4>
+
+                    {event.location && (
+                      <div className="text-[10px] text-stone-700 font-semibold mt-1.5 pl-4 flex flex-wrap items-center gap-1 bg-white/60 p-1.5 rounded-xl border border-stone-200/30">
+                        <MapPin className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                        <span className="truncate max-w-[150px]" title={event.location}>{event.location}</span>
+                        <div className="flex gap-0.5 ml-auto">
+                          <a
+                            href={`https://map.baidu.com/search?query=${encodeURIComponent(event.location)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[9px] px-1 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded"
+                          >
+                            百度
+                          </a>
+                          <a
+                            href={`https://www.amap.com/search?query=${encodeURIComponent(event.location)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[9px] px-1 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded"
+                          >
+                            高德
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {event.description && (
+                      <p className="text-[10px] text-[#A68F8F] font-bold mt-1.5 pl-3 border-l-2 border-[#FFDAB9] break-all leading-relaxed">
+                        {event.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main Grid Card */}
@@ -397,7 +630,10 @@ export default function CalendarView({
                         title={`${event.time} - ${event.title}`}
                       >
                         <span className="shrink-0">{member ? member.avatar : '🐰'}</span>
-                        <span className="truncate">{event.title}</span>
+                        <span className="truncate">
+                          {event.recurrence && event.recurrence !== 'none' ? '🔄' : ''}
+                          {event.title}
+                        </span>
                       </div>
                     );
                   })}
@@ -489,6 +725,11 @@ export default function CalendarView({
                           <span className="text-[11px] text-[#A68F8F] font-bold ml-2">
                             {CATEGORY_LABELS[event.category]}
                           </span>
+                          {getRecurrenceLabel(event) && (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 font-black px-1.5 py-0.5 rounded-lg border border-amber-200 ml-2">
+                              {getRecurrenceLabel(event)}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -736,6 +977,80 @@ export default function CalendarView({
                   onChange={(e) => setFormTime(e.target.value)}
                   className="w-full px-4 py-2 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-xs font-semibold"
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Recurrence Settings */}
+          <div className="bg-[#FFF9F2] rounded-2xl border border-[#FFDAB9]/50 p-3.5 space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-[#6B4F4F] mb-1.5 flex items-center gap-1">
+                <span>🔁 重复设置</span>
+                <span className="text-[10px] text-stone-400 font-normal">（点击设置周三/周五等特定天重复）</span>
+              </label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(['none', 'daily', 'weekly', 'custom_weekly'] as const).map((r) => {
+                  const labels = {
+                    none: '不重复',
+                    daily: '每天',
+                    weekly: '每周',
+                    custom_weekly: '自定义周',
+                  };
+                  return (
+                    <button
+                      type="button"
+                      key={r}
+                      onClick={() => {
+                        setFormRecurrence(r);
+                        if (r === 'custom_weekly' && formRecurrenceDays.length === 0) {
+                          setFormRecurrenceDays([getDayOfWeek(selectedDate)]);
+                        }
+                      }}
+                      className={`px-1 py-1.5 rounded-xl border text-[11px] font-bold text-center transition-all cursor-pointer ${
+                        formRecurrence === r
+                          ? 'bg-[#FF91A4] text-white border-[#FF91A4] scale-102 shadow-xs'
+                          : 'bg-white text-[#6B4F4F] border-[#FFDAB9] hover:bg-stone-50'
+                      }`}
+                    >
+                      {labels[r]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {formRecurrence === 'custom_weekly' && (
+              <div className="pt-2 border-t border-[#FFDAB9]/30">
+                <label className="block text-[10px] font-black text-[#6B4F4F] mb-1.5">
+                  选择每周重复的星期：
+                </label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {['日', '一', '二', '三', '四', '五', '六'].map((dayName, idx) => {
+                    const isSelected = formRecurrenceDays.includes(idx);
+                    return (
+                      <button
+                        type="button"
+                        key={idx}
+                        onClick={() => {
+                          if (isSelected) {
+                            if (formRecurrenceDays.length > 1) {
+                              setFormRecurrenceDays(formRecurrenceDays.filter((d) => d !== idx));
+                            }
+                          } else {
+                            setFormRecurrenceDays([...formRecurrenceDays, idx].sort());
+                          }
+                        }}
+                        className={`w-7 h-7 rounded-full border text-[11px] font-bold transition-all flex items-center justify-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#FF91A4] text-white border-[#FF91A4] scale-105 font-black'
+                            : 'bg-white text-[#6B4F4F] border-[#FFDAB9] hover:bg-stone-50'
+                        }`}
+                      >
+                        {dayName}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

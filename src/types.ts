@@ -20,6 +20,8 @@ export interface CalendarEvent {
   isAllDay?: boolean;  // Is it an all-day event?
   endDate?: string;    // YYYY-MM-DD (if multi-day)
   location?: string;   // Event location
+  recurrence?: 'none' | 'daily' | 'weekly' | 'custom_weekly';
+  recurrenceDays?: number[]; // Days of the week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
 }
 
 export interface TodoTask {
