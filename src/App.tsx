@@ -14,42 +14,7 @@ import BunnyAssistant from './components/BunnyAssistant';
 import Modal from './components/Modal';
 import { Heart, Bell, Calendar as CalendarIcon, Sparkles, CloudLightning, Download, BookOpen, X, Globe, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-// Cute synthesized bell chime using Web Audio API (zero audio file dependencies, fully reliable)
-const playChime = () => {
-  try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    
-    const playTone = (freq: number, start: number, duration: number) => {
-      const osc = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, start);
-      
-      gainNode.gain.setValueAtTime(0, start);
-      gainNode.gain.linearRampToValueAtTime(0.25, start + 0.04);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-      
-      osc.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      
-      osc.start(start);
-      osc.stop(start + duration);
-    };
-
-    const now = ctx.currentTime;
-    // Bunny chime sequence: C6 -> E6 -> G6 -> C7
-    playTone(1046.50, now, 0.45);
-    playTone(1318.51, now + 0.12, 0.45);
-    playTone(1567.98, now + 0.24, 0.45);
-    playTone(2093.00, now + 0.36, 0.65);
-  } catch (error) {
-    console.error('Audio chime failed to play:', error);
-  }
-};
+import { playChime } from './utils/audio';
 
 export default function App() {
   // Load initial states from LocalStorage or fall back to defaults
@@ -116,11 +81,8 @@ export default function App() {
   const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
 
   // ==========================================
-  // 🔑 家庭暗号安全锁配置 (可以直接在此修改默认暗号)
+  // 🔑 家庭暗号安全锁配置
   // ==========================================
-  // 💡 默认为 '1234'。首次访问的用户都必须输入这个暗号才能解锁。
-  // 如果您想设置其他的专属暗号，只需把这里的 '1234' 改成您的暗号，然后推送到 GitHub 部署即可！
-  // 如果设置为空字符串 ''，则代表不设暗号、完全公开。
   const GLOBAL_DEFAULT_PASSCODE = '咚咚7777';
 
   // Passcode Protection States
@@ -300,9 +262,7 @@ export default function App() {
             if (pullRes.ok && active) {
               const data = await pullRes.json();
 
-              // Protection: If the server database is completely empty (e.g. due to server restart/wipe),
-              // but we have active data in our current state, do NOT let the empty database overwrite our data.
-              // Instead, we should trigger a push to restore the server's database!
+              // Protection: If the server database is completely empty, restore it with local state
               const currentHasData = stateRef.current.events.length > 0 || stateRef.current.todos.length > 0 || stateRef.current.alerts.length > 0;
               const serverIsEmpty = (!data.events || data.events.length === 0) && 
                                     (!data.todos || data.todos.length === 0) && 
@@ -360,7 +320,35 @@ export default function App() {
     };
   }, [lastVersion]);
 
-  // Background check for upcoming calendar events
+  // Helper to determine if an event occurs on a given date (supporting daily/weekly/custom recurring)
+  const isEventOnDate = (event: CalendarEvent, targetDateStr: string, d: Date): boolean => {
+    if (targetDateStr < event.date) return false;
+
+    if (!event.recurrence || event.recurrence === 'none') {
+      if (event.endDate && event.endDate !== event.date) {
+        return targetDateStr >= event.date && targetDateStr <= event.endDate;
+      }
+      return event.date === targetDateStr;
+    }
+
+    if (event.recurrence === 'daily') {
+      return true;
+    }
+
+    if (event.recurrence === 'weekly') {
+      const parts = event.date.split('-').map(Number);
+      const startDay = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+      return d.getDay() === startDay;
+    }
+
+    if (event.recurrence === 'custom_weekly' && event.recurrenceDays) {
+      return event.recurrenceDays.includes(d.getDay());
+    }
+
+    return false;
+  };
+
+  // Background check for upcoming calendar events (1h, 30m, 15m, or at-time)
   useEffect(() => {
     if (isInitialLoading) return;
 
@@ -371,61 +359,115 @@ export default function App() {
       const day = String(now.getDate()).padStart(2, '0');
       const todayStr = `${year}-${month}-${day}`; // YYYY-MM-DD
       const currentHM = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'); // HH:MM
+      const nowMs = now.getTime();
 
       let updated = false;
       const nextEvents = events.map((event) => {
-        // Only trigger if date and time match, it is not an all-day event, and reminder hasn't sent yet
-        if (event.date === todayStr && event.time === currentHM && !event.isAllDay && !event.reminderSent) {
+        // Only consider timed events (not all-day)
+        if (event.isAllDay || !event.time || event.time === '全天' || !event.time.includes(':')) {
+          return event;
+        }
+
+        // Determine configured reminder timing
+        const timing = event.reminderTiming || (event.reminderSent === false ? 'at_time' : 'none');
+        if (timing === 'none') return event;
+
+        // Check if event happens today
+        if (!isEventOnDate(event, todayStr, now)) return event;
+
+        const [eh, em] = event.time.split(':').map(Number);
+        if (isNaN(eh) || isNaN(em)) return event;
+
+        const eventStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), eh, em, 0, 0).getTime();
+
+        let offsetMs = 0;
+        let timingLabel = '准时';
+        let timingMsg = '现在已经到时间啦！';
+        let timingTag = 'at_time';
+
+        if (timing === '15m') {
+          offsetMs = 15 * 60 * 1000;
+          timingLabel = '提前15分钟';
+          timingMsg = '还有 15 分钟就要开始啦！';
+          timingTag = '15m';
+        } else if (timing === '30m') {
+          offsetMs = 30 * 60 * 1000;
+          timingLabel = '提前30分钟';
+          timingMsg = '还有 30 分钟就要开始啦！';
+          timingTag = '30m';
+        } else if (timing === '1h') {
+          offsetMs = 60 * 60 * 1000;
+          timingLabel = '提前1小时';
+          timingMsg = '还有 1 个小时就要开始啦！';
+          timingTag = '1h';
+        }
+
+        const targetTriggerMs = eventStartMs - offsetMs;
+        const diff = nowMs - targetTriggerMs;
+
+        // Fire if current time is within [0s, 90s] past target reminder trigger timestamp
+        if (diff >= 0 && diff < 90 * 1000) {
+          const sentKey = `bunny_reminded_${event.id}_${todayStr}_${timingTag}`;
+          if (localStorage.getItem(sentKey) === 'true' || sessionStorage.getItem(sentKey) === 'true') {
+            return event;
+          }
+
+          localStorage.setItem(sentKey, 'true');
+          sessionStorage.setItem(sentKey, 'true');
           updated = true;
-          
-          // 1. Play cute sound
+
+          // 1. Play synthesized pleasant bell melody
           playChime();
 
           // 2. Trigger custom in-app Toast
           const assocMember = members.find((m) => m.id === event.memberId);
-          triggerToast(assocMember?.avatar || '⏰', '家庭日程开始啦！⏰', `"${event.title}" 现在已经到时间了哦！`);
+          triggerToast(
+            assocMember?.avatar || '⏰',
+            `家庭日程提醒 (${timingLabel}) 🔔`,
+            `【${event.title}】${timingMsg}（安排时间：${event.time}）`
+          );
 
-          // 3. System HTML5 Notification (background)
+          // 3. System HTML5 Notification
           if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-            new Notification('🐰 兔兔家庭日历提醒', {
-              body: `【${event.title}】时间到啦！\n${event.description || '全家人都要快快准备好哦 🥕'}`,
-              tag: event.id,
+            new Notification(`🐰 兔兔日历提醒：【${event.title}】`, {
+              body: `⏰ ${timingMsg}（安排时间：${event.time}）\n${event.description || '全家人都要快快准备好哦 🥕'}`,
+              tag: `${event.id}-${todayStr}-${timingTag}`,
             });
           }
 
-          // 4. Log a new system alert in family alerts stream
+          // 4. Log in shared family alerts stream
           const alertId = `alert-${Date.now()}`;
           const alert: AlertNotification = {
             id: alertId,
-            time: '当前',
-            title: '⏰ 系统自动日程提醒',
-            message: `日程 [${event.title}] 设定的提醒时间 (${event.time}) 已到达。`,
+            time: currentHM,
+            title: `⏰ 日程提醒 (${timingLabel})`,
+            message: `日程【${event.title}】${timingMsg} 安排时间：${event.time}`,
             memberId: event.memberId === 'all' ? 'member-4' : event.memberId,
             type: 'event',
             timestamp: new Date().toISOString(),
           };
-          
-          // We update alerts in a deferred timeout to avoid multiple render loop triggers
+
           setTimeout(() => {
             setAlerts((prev) => [alert, ...prev].slice(0, 50));
           }, 10);
 
           return { ...event, reminderSent: true };
         }
+
         return event;
       });
 
       if (updated) {
         setEvents(nextEvents);
       }
-    }, 10000); // Check every 10 seconds
+    }, 5000); // Check every 5 seconds for precision timing
 
     return () => clearInterval(checkInterval);
   }, [events, members, isInitialLoading]);
 
-  // Combined debounce saver to Server (updates both local storage as a backup and the cloud server)
+  // Debounced saver to Server & Local Storage
   useEffect(() => {
-    if (isInitialLoading) return; // Prevent saving default/empty state over server database on mount
+    if (isInitialLoading) return;
 
     const newTimestamp = Date.now();
 
@@ -460,9 +502,8 @@ export default function App() {
         console.error('Failed to sync to server:', err);
         setSyncStatus('error');
       }
-    }, 1200); // 1.2s debounce to aggregate quick changes
+    }, 1200);
 
-    // Also write to local storage as safety backup
     localStorage.setItem('bunny_data_timestamp', newTimestamp.toString());
     localStorage.setItem('bunny_family_members', JSON.stringify(members));
     localStorage.setItem('bunny_family_events', JSON.stringify(events));
@@ -474,7 +515,6 @@ export default function App() {
     localStorage.setItem('bunny_app_description', appDescription);
     localStorage.setItem('bunny_family_passcode', passcode);
 
-    // Create a persistent history backup in local storage that is NEVER overwritten by empty arrays
     if (events.length > 0 || todos.length > 0 || alerts.length > 0) {
       localStorage.setItem('bunny_family_data_backup', JSON.stringify({
         members,
@@ -497,19 +537,17 @@ export default function App() {
   const triggerToast = (avatar: string, title: string, message: string) => {
     const id = Date.now().toString();
     setToast({ id, avatar, title, message });
-    // Auto clear toast after 4 seconds
     setTimeout(() => {
       setToast((prev) => (prev?.id === id ? null : prev));
     }, 4000);
   };
 
-  // 1. Member Handlers
+  // Member Handlers
   const handleAddMember = (newMember: Omit<FamilyMember, 'id'>) => {
     const id = `member-${Date.now()}`;
     const added: FamilyMember = { ...newMember, id };
     setMembers((prev) => [...prev, added]);
     
-    // Log alert notification
     const alert: AlertNotification = {
       id: `alert-${Date.now()}`,
       time: '刚才',
@@ -528,12 +566,10 @@ export default function App() {
     if (!memberToDelete) return;
 
     setMembers((prev) => prev.filter((m) => m.id !== id));
-    // If active member is deleted, fall back to first member
     if (activeMemberId === id) {
       setActiveMemberId(members[0]?.id || 'member-2');
     }
 
-    // Clean up todos & events associated or re-assign them to all
     setTodos((prev) =>
       prev.map((t) => (t.assignedTo === id ? { ...t, assignedTo: 'all' } : t))
     );
@@ -549,13 +585,12 @@ export default function App() {
     triggerToast(updated.avatar, '资料已更新 📝', `${updated.name} 的家庭成员卡片更新成功！`);
   };
 
-  // 2. Calendar Event Handlers
+  // Calendar Event Handlers
   const handleAddEvent = (newEvent: Omit<CalendarEvent, 'id'>) => {
     const id = `event-${Date.now()}`;
     const added: CalendarEvent = { ...newEvent, id, reminderSent: false };
     setEvents((prev) => [...prev, added]);
 
-    // Send Alert
     const sender = members.find((m) => m.id === activeMemberId);
     const alert: AlertNotification = {
       id: `alert-${Date.now()}`,
@@ -585,7 +620,7 @@ export default function App() {
     triggerToast('🗑️', '日程已取消', `"${event.title}" 已经从日历中移除。`);
   };
 
-  // 3. Todo Handlers
+  // Todo Handlers
   const handleAddTodo = (newTodo: Omit<TodoTask, 'id' | 'completed' | 'createdAt'>) => {
     const id = `todo-${Date.now()}`;
     const added: TodoTask = {
@@ -599,7 +634,6 @@ export default function App() {
     const sender = members.find((m) => m.id === activeMemberId);
     const assignee = members.find((m) => m.id === added.assignedTo);
     
-    // Add Alert
     const alert: AlertNotification = {
       id: `alert-${Date.now()}`,
       time: '刚才',
@@ -622,7 +656,6 @@ export default function App() {
           const nextCompleted = !t.completed;
           
           if (nextCompleted) {
-            // Trigger completion alert
             const alert: AlertNotification = {
               id: `alert-${Date.now()}`,
               time: '刚才',
@@ -655,7 +688,7 @@ export default function App() {
     triggerToast('🗑️', '任务已删除', `待办事项 "${todo.title}" 已移除。`);
   };
 
-  // 4. Alert Handlers
+  // Alert Handlers
   const handleSendAlert = (title: string, message: string, memberId: string) => {
     const sender = members.find((m) => m.id === memberId);
     const alert: AlertNotification = {
@@ -694,7 +727,6 @@ export default function App() {
           animate={{ opacity: 1, scale: 1 }}
           className="max-w-md w-full bg-white rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border-4 border-[#FFDAB9] text-center relative"
         >
-          {/* Bunny Decor */}
           <div className="w-20 h-20 bg-[#FFE4E6] rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border-2 border-[#FFB3C1] relative">
             🐰
             <span className="absolute -top-1 -right-1 text-base">🔑</span>
@@ -735,7 +767,6 @@ export default function App() {
             </button>
           </form>
 
-          {/* Quick tips */}
           <div className="mt-8 pt-4 border-t border-[#FFF0F0] text-[11px] text-[#A68F8F] font-semibold leading-relaxed">
             <p>💡 这是自定义的家庭保护屏障，不需要花费一分钱。</p>
             <p className="mt-1">
@@ -789,7 +820,7 @@ export default function App() {
                 🪄
               </div>
               <div className="flex-1">
-                <h3 className="font-black text-amber-900 text-sm sm:text-base flex items-center gap-1.5">
+                <h3 className="font-black text-amber-900 text-sm sm:base flex items-center gap-1.5">
                   发现可恢复的家庭数据备份！ ✨
                 </h3>
                 <p className="text-xs text-amber-700 font-semibold mt-1 leading-relaxed">
@@ -935,13 +966,9 @@ export default function App() {
           </div>
         </header>
 
-        {/* Workspace Body: Left Side (Todos/Reminders), Right Side (Calendar/Bunny) */}
+        {/* Workspace Body */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
-          
-          {/* Left Sidebar Columns (col-span-4) */}
           <aside className="lg:col-span-4 flex flex-col gap-6">
-            
-            {/* 1. Shared To-Do Items Card */}
             <div className="flex-1">
               <TodoView
                 todos={todos}
@@ -952,8 +979,6 @@ export default function App() {
                 onDeleteTodo={handleDeleteTodo}
               />
             </div>
-
-            {/* 2. Alerts and Reminders list */}
             <div className="h-[310px]">
               <RemindersList
                 alerts={alerts}
@@ -964,13 +989,8 @@ export default function App() {
             </div>
           </aside>
 
-          {/* Right Main Columns (col-span-8) */}
           <main className="lg:col-span-8 flex flex-col gap-6">
-            
-            {/* 1. Bunny Mascot Card */}
             <BunnyAssistant />
-
-            {/* 2. Calendar View Card */}
             <div className="flex-1 flex flex-col justify-between">
               <CalendarView
                 events={events}
@@ -1021,7 +1041,6 @@ export default function App() {
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
               className="relative bg-white rounded-[2.5rem] border-4 border-[#FFDAB9] max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl text-[#6B4F4F]"
             >
-              {/* Close Button */}
               <button
                 onClick={() => setShowExportModal(false)}
                 className="absolute top-6 right-6 p-2 rounded-full bg-[#FFF0F0] text-[#A68F8F] hover:text-[#FF91A4] hover:scale-105 transition-all duration-200 cursor-pointer"
@@ -1029,7 +1048,6 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Title Header */}
               <div className="flex items-center gap-3 border-b-2 border-[#FFF0F0] pb-5 mb-6">
                 <div className="w-12 h-12 bg-[#FFC1CC] rounded-2xl flex items-center justify-center border-b-4 border-[#FF91A4]">
                   <CloudLightning className="w-6 h-6 text-white" />
@@ -1042,14 +1060,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Why we need this block */}
               <div className="bg-[#FFF9F2] rounded-2xl p-4 border border-[#FFDAB9]/50 mb-6 text-xs leading-relaxed font-semibold">
                 <p className="text-[#FF91A4] font-black mb-1">📢 为什么需要独立部署？</p>
-                因为 Google 的安全准则限制，AI Studio 默认的预览链接（即你现在看到的链接）开启了 Googler 权限验证，外部家人打开会显示 <code className="bg-white px-1.5 py-0.5 rounded border border-[#FFDAB9] text-xs font-mono text-red-500 font-bold">403 Forbidden</code>。
-                通过将项目导出并部署到免费托管平台 <strong className="text-stone-800">Vercel</strong>，你就能获得一个全新的、属于你们家的**公共地址**，在中国国内和手机浏览器里无需 VPN 就能完美加载，还可以添加到手机主屏幕上随时当作 App 使用！
+                因为 Google 的安全准则限制，AI Studio 默认的预览链接开启了 Googler 权限验证，外部家人打开会显示 <code className="bg-white px-1.5 py-0.5 rounded border border-[#FFDAB9] text-xs font-mono text-red-500 font-bold">403 Forbidden</code>。
+                通过将项目部署到托管平台 <strong className="text-stone-800">Render</strong> 或 <strong className="text-stone-800">Vercel</strong>，全家在手机或国内网络上无需 VPN 就能秒开！
               </div>
 
-              {/* Step 1: Download code */}
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="w-6 h-6 rounded-full bg-[#FF91A4] text-white flex items-center justify-center text-xs font-bold">1</span>
@@ -1057,7 +1073,7 @@ export default function App() {
                 </div>
                 <div className="pl-8">
                   <p className="text-xs text-[#A68F8F] font-bold mb-3">
-                    我已经为你全自动打包了整个日历的代码包，里面包含运行本应用所需的全部设置。
+                    里面包含运行本应用所需的全部设置。
                   </p>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <a
@@ -1068,92 +1084,10 @@ export default function App() {
                       <Download className="w-4 h-4" />
                       <span>📁 推荐：下载 ZIP 压缩包 (rabbit-calendar.zip)</span>
                     </a>
-                    <a
-                      href="/rabbit-calendar.tar.gz"
-                      download="rabbit-calendar.tar.gz"
-                      className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FFF0F0] border-2 border-[#FFDAB9] hover:bg-[#FFC1CC]/20 text-[#FF91A4] hover:text-[#FF6B8B] font-black text-xs transition-all duration-200 cursor-pointer shadow-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>📦 备用：下载 TAR.GZ 压缩包 (rabbit-calendar.tar.gz)</span>
-                    </a>
-                  </div>
-                  <div className="text-[10px] text-[#A68F8F] font-bold mt-2.5 space-y-1 bg-stone-50 p-3 rounded-xl border border-stone-100">
-                    <p className="text-stone-700">💡 提示：Windows/Mac 系统都原生支持解压 <code className="bg-stone-200/60 px-1 py-0.5 rounded font-mono text-xs text-stone-800">.zip</code> 文件，推荐首选下载 ZIP 文件！</p>
-                    <p className="text-amber-600 font-bold">⚠️ 重要提示（如果无法点击下载）：</p>
-                    <p className="text-stone-500 font-normal">由于预览界面的安全限制，直接在左侧预览框中点击下载可能会被浏览器阻止。请点击预览框右上角的 <strong className="text-stone-700">“Open in New Tab” (在新标签页中打开)</strong> 图标，在独立的新标签页中点击下载，或直接在网址末尾加上 <code className="bg-stone-200/60 px-1.5 py-0.5 rounded font-mono text-xs text-stone-800">/rabbit-calendar.zip</code> 即可完美极速下载！</p>
                   </div>
                 </div>
               </div>
 
-              {/* Step 2: Upload to GitHub */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-6 h-6 rounded-full bg-[#FF91A4] text-white flex items-center justify-center text-xs font-bold">2</span>
-                  <h3 className="font-black text-sm">将代码上传到 GitHub</h3>
-                </div>
-                <div className="pl-8 space-y-2 text-xs leading-relaxed font-semibold">
-                  <p className="text-[#A68F8F] font-bold">
-                    由于你具有 Google 身份，AI Studio 自带的 GitHub Sync 按钮被停用。别担心，手动上传只需 30 秒：
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1.5 pl-2 bg-[#FFF9F2]/40 p-3 rounded-xl border border-[#FFDAB9]/20 text-stone-700">
-                    <li>访问 <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-[#FF91A4] hover:underline font-bold inline-flex items-center gap-0.5">github.com <Globe className="w-3 h-3" /></a> 注册一个免费的个人账号（非 Google 账号均可）。</li>
-                    <li>登录后点击右上角的 <strong className="text-[#FF91A4] font-black">+</strong> 按钮，选择 <strong className="font-bold">New repository</strong>。</li>
-                    <li>在 <strong className="font-bold">Repository name</strong> 里输入 <code className="bg-white px-1.5 py-0.5 rounded border border-stone-200 font-mono text-xs">rabbit-calendar</code>，其它选项不用动，直接滑到最下方点击绿色的 <strong className="font-bold">Create repository</strong>。</li>
-                    <li>在新页面中，找到一句话 <strong className="text-stone-800">"Get started by creating a new file or uploading an existing file"</strong>，点击其中的 <strong className="text-[#FF91A4] hover:underline font-bold cursor-pointer">uploading an existing file</strong>。</li>
-                    <li>把你解压出来的文件夹里的所有内容（包括 <code className="font-mono">src</code>、<code className="font-mono">index.html</code>、<code className="font-mono">package.json</code> 等）全部拖拽到网页的灰色区域中。</li>
-                    <li>等待上传进度条走完后，滑到最下面点击绿色的 <strong className="font-bold">Commit changes</strong> 按钮，代码上传就搞定啦！</li>
-                  </ol>
-                </div>
-              </div>
-
-              {/* Step 3: Deploy Full-Stack Node Server */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-6 h-6 rounded-full bg-[#FF91A4] text-white flex items-center justify-center text-xs font-bold">3</span>
-                  <h3 className="font-black text-sm">选择免费平台发布上线 (推荐 Render 以支持多端实时同步)</h3>
-                </div>
-                <div className="pl-8 space-y-2 text-xs leading-relaxed font-semibold">
-                  <p className="text-[#A68F8F] font-bold">
-                    因为我们升级了全新的 Node.js 后端服务来实现多设备实时同步，建议选择支持运行后端的平台：
-                  </p>
-                  
-                  <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 mb-2">
-                    <p className="text-[#065F46] font-bold mb-1.5">🌟 推荐方案：发布至 Render (完全支持多端实时同步)：</p>
-                    <ol className="list-decimal list-inside space-y-1.5 pl-1 text-stone-700">
-                      <li>访问 <a href="https://render.com" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline font-bold inline-flex items-center gap-0.5">render.com <Globe className="w-3 h-3" /></a> 并选择 GitHub 登录。</li>
-                      <li>在 Dashboard 点击 <strong className="font-bold">New +</strong> 并选择 <strong className="font-bold">Web Service</strong>。</li>
-                      <li>连接你的 GitHub 账号，导入你新建的 <code className="bg-white px-1.5 py-0.5 rounded border border-stone-200 font-mono text-xs">rabbit-calendar</code> 仓库。</li>
-                      <li>在配置页中：
-                        <ul className="list-disc list-inside pl-4 mt-1 space-y-0.5 text-stone-600">
-                          <li>Build Command: <code className="bg-white px-1 py-0.5 rounded font-mono text-xs text-stone-800">npm run build</code></li>
-                          <li>Start Command: <code className="bg-white px-1 py-0.5 rounded font-mono text-xs text-stone-800">npm run start</code></li>
-                        </ul>
-                      </li>
-                      <li>点击最下方的 <strong className="font-bold text-white bg-stone-900 px-3 py-1 rounded-lg">Deploy Web Service</strong>。稍等 2 分钟构建完成后，你就能获得一个支持多设备、实时保存、完全同步的线上家庭日历啦！✨</li>
-                    </ol>
-                  </div>
-
-                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
-                    <p className="text-stone-700 font-bold mb-1.5">🎈 备用方案：发布至 Vercel (仅支持单机离线使用)：</p>
-                    <ol className="list-decimal list-inside space-y-1 pl-1 text-stone-600">
-                      <li>访问 <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-[#FF91A4] hover:underline font-bold">vercel.com</a>，通过 GitHub 登录并导入仓库。</li>
-                      <li>Framework Preset 确认为 <strong className="font-bold">Vite</strong>，直接点击 <strong className="font-bold">Deploy</strong> 部署。</li>
-                      <li>注意：由于 Vercel 是无状态的静态平台，该方案仅限单机在浏览器 LocalStorage 中保存，无法在不同手机设备间实时同步日程。</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-
-              {/* PWA / Screen Addition tip */}
-              <div className="bg-[#FFF0F0] rounded-[1.5rem] p-4 border-2 border-dashed border-[#FFC1CC] text-xs font-bold leading-relaxed text-stone-700">
-                <p className="text-[#FF91A4] font-black flex items-center gap-1 mb-1">
-                  💡 贴心提示：如何在手机桌面上当成原生 APP 随时打开？
-                </p>
-                部署成功后，全家人在手机上用手机自带浏览器（如 iOS 的 Safari 或 Android 的 Chrome）打开你们专属的 Vercel 网址，点击浏览器的**分享菜单**（Safari 底部向上箭头的按钮），选择 <strong className="text-[#FF91A4] font-black">“添加到主屏幕” (Add to Home Screen)</strong> 即可！
-                手机桌面就会出现可爱的兔兔图标 🐰，每次点击都可以像真正的 App 一样沉浸式全屏打开，非常方便快捷！
-              </div>
-
-              {/* Action Buttons footer */}
               <div className="flex justify-end mt-8 pt-4 border-t-2 border-[#FFF0F0]">
                 <button
                   onClick={() => setShowExportModal(false)}
@@ -1242,71 +1176,7 @@ export default function App() {
               placeholder="例如：1234 或 小兔子乖乖"
               className="w-full px-4 py-2.5 bg-white rounded-2xl border-2 border-[#FFDAB9] focus:outline-hidden focus:border-[#FF91A4] text-stone-800 text-sm font-semibold"
             />
-            <p className="text-[10px] text-[#A68F8F] mt-1.5 leading-relaxed font-semibold">
-              🔒 设定暗号后，他人必须输入正确的暗号方可访问该网页，可以完美隔绝未受邀访客！
-            </p>
           </div>
-
-          {/* Recovery backup block */}
-          {typeof window !== 'undefined' && localStorage.getItem('bunny_family_data_backup') && (
-            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-3.5 space-y-2 mt-2">
-              <div className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                <Sparkles className="w-4.5 h-4.5 text-amber-500 animate-pulse" />
-                <span>发现本地自动备份！</span>
-              </div>
-              <p className="text-[10px] text-amber-700 font-semibold leading-relaxed">
-                如果您输入的数据因网络或容器重启而清空，可一键将其还原并重新推送到服务器上哦。
-              </p>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const savedBackup = localStorage.getItem('bunny_family_data_backup');
-                    if (savedBackup) {
-                      const backup = JSON.parse(savedBackup);
-                      if (backup.members && backup.members.length > 0) setMembers(backup.members);
-                      if (backup.events) setEvents(backup.events);
-                      if (backup.todos) setTodos(backup.todos);
-                      if (backup.alerts) setAlerts(backup.alerts);
-                      if (backup.appTitle) setAppTitle(backup.appTitle);
-                      if (backup.appSubtitle) setAppSubtitle(backup.appSubtitle);
-                      if (backup.appDescription) setAppDescription(backup.appDescription);
-                      if (backup.passcode) setPasscode(backup.passcode);
-                      
-                      // Push to server immediately
-                      setSyncStatus('syncing');
-                      await fetch('/api/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          members: backup.members,
-                          events: backup.events,
-                          todos: backup.todos,
-                          alerts: backup.alerts,
-                          activeMemberId: backup.activeMemberId || activeMemberId,
-                          appTitle: backup.appTitle || appTitle,
-                          appSubtitle: backup.appSubtitle || appSubtitle,
-                          appDescription: backup.appDescription || appDescription,
-                          passcode: backup.passcode || passcode,
-                          timestamp: Date.now(),
-                          clientLastVersion: 0,
-                        }),
-                      });
-                      
-                      setIsEditTitleModalOpen(false);
-                      triggerToast('🎉', '备份已成功还原！', '所有日程、待办与成员资料已重新推送到服务器。');
-                    }
-                  } catch (e) {
-                    console.error('Failed to restore backup:', e);
-                    triggerToast('❌', '还原失败', '解析备份数据时发生未知错误。');
-                  }
-                }}
-                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer"
-              >
-                🪄 立即一键恢复我的所有数据
-              </button>
-            </div>
-          )}
 
           <div className="pt-2 flex justify-between items-center gap-3">
             {passcode.trim() !== '' && (
