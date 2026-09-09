@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { CalendarEvent, FamilyMember } from '../types';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check, MapPin } from 'lucide-react';
+import { CalendarEvent, FamilyMember, ReminderTiming } from '../types';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check, MapPin, Bell, Volume2 } from 'lucide-react';
 import Modal from './Modal';
+import { playChime } from '../utils/audio';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -81,9 +82,27 @@ export default function CalendarView({
   const [smartPasteText, setSmartPasteText] = useState('');
   const [formRecurrence, setFormRecurrence] = useState<'none' | 'daily' | 'weekly' | 'custom_weekly'>('none');
   const [formRecurrenceDays, setFormRecurrenceDays] = useState<number[]>([]);
+  const [formReminderTiming, setFormReminderTiming] = useState<ReminderTiming>('none');
 
   // Form state for editing
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+
+  const REMINDER_OPTIONS: { value: ReminderTiming; label: string; desc: string }[] = [
+    { value: 'none', label: '不提醒', desc: '无提醒' },
+    { value: '15m', label: '提前 15 分钟', desc: '提前15分钟' },
+    { value: '30m', label: '提前 30 分钟', desc: '提前半小时' },
+    { value: '1h', label: '提前 1 个小时', desc: '提前1小时' },
+    { value: 'at_time', label: '准时提醒', desc: '到点提醒' },
+  ];
+
+  const getReminderBadgeLabel = (timing?: ReminderTiming) => {
+    if (!timing || timing === 'none') return null;
+    if (timing === '15m') return '🔔 提前15分';
+    if (timing === '30m') return '🔔 提前30分';
+    if (timing === '1h') return '🔔 提前1小时';
+    if (timing === 'at_time') return '🔔 准时提醒';
+    return null;
+  };
 
   // Helper to safely get the day of the week in local time (0 is Sunday, 1 is Monday ... 6 is Saturday)
   const getDayOfWeek = (dateStr: string) => {
@@ -167,8 +186,6 @@ export default function CalendarView({
       isCurrentMonth: true,
     });
   }
-
-  // Today's date is dynamically computed at the component level (TODAY_STR)
 
   const getEventsForDate = (dateStr: string) => {
     return events.filter((e) => {
@@ -254,6 +271,15 @@ export default function CalendarView({
     }
     setFormDescription(desc);
 
+    // Smart detection for reminder timing
+    if (smartPasteText.includes('15分钟') || smartPasteText.includes('一刻钟')) {
+      setFormReminderTiming('15m');
+    } else if (smartPasteText.includes('半小时') || smartPasteText.includes('30分钟')) {
+      setFormReminderTiming('30m');
+    } else if (smartPasteText.includes('1小时') || smartPasteText.includes('一个小时') || smartPasteText.includes('60分钟')) {
+      setFormReminderTiming('1h');
+    }
+
     setSmartPasteText('');
     setShowSmartPaste(false);
   };
@@ -281,6 +307,7 @@ export default function CalendarView({
         location: eventLocation,
         recurrence: formRecurrence,
         recurrenceDays: formRecurrence === 'custom_weekly' ? formRecurrenceDays : undefined,
+        reminderTiming: formReminderTiming,
       });
       setEditingEventId(null);
     } else {
@@ -297,6 +324,7 @@ export default function CalendarView({
         location: eventLocation,
         recurrence: formRecurrence,
         recurrenceDays: formRecurrence === 'custom_weekly' ? formRecurrenceDays : undefined,
+        reminderTiming: formReminderTiming,
       });
     }
 
@@ -312,6 +340,7 @@ export default function CalendarView({
     setSmartPasteText('');
     setFormRecurrence('none');
     setFormRecurrenceDays([]);
+    setFormReminderTiming('none');
     setIsAddModalOpen(false);
   };
 
@@ -331,6 +360,7 @@ export default function CalendarView({
     setSmartPasteText('');
     setFormRecurrence('none');
     setFormRecurrenceDays([]);
+    setFormReminderTiming('30m'); // default to 30 minutes before for convenience
     setIsAddModalOpen(true);
   };
 
@@ -349,6 +379,7 @@ export default function CalendarView({
     setSmartPasteText('');
     setFormRecurrence(event.recurrence || 'none');
     setFormRecurrenceDays(event.recurrenceDays || []);
+    setFormReminderTiming(event.reminderTiming || 'none');
     setIsDetailModalOpen(false);
     setIsAddModalOpen(true);
   };
@@ -388,8 +419,9 @@ export default function CalendarView({
           </button>
           <button
             onClick={() => {
-              setCurrentYear(2026);
-              setCurrentMonth(6); // Reset to July 2026
+              const now = new Date();
+              setCurrentYear(now.getFullYear());
+              setCurrentMonth(now.getMonth());
             }}
             className="px-3 py-1 bg-pink-50 hover:bg-pink-100 border border-[#FFC1CC] text-[#FF91A4] text-xs font-bold rounded-xl cursor-pointer"
           >
@@ -513,6 +545,11 @@ export default function CalendarView({
                           🗓️ 跨期
                         </span>
                       ) : null}
+                      {getReminderBadgeLabel(event.reminderTiming) && (
+                        <span className="bg-rose-50 text-rose-600 border border-rose-200 text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0">
+                          {getReminderBadgeLabel(event.reminderTiming)}
+                        </span>
+                      )}
                       <span className="font-bold text-stone-800 break-all">{event.title}</span>
                     </h4>
 
@@ -632,6 +669,7 @@ export default function CalendarView({
                         <span className="shrink-0">{member ? member.avatar : '🐰'}</span>
                         <span className="truncate">
                           {event.recurrence && event.recurrence !== 'none' ? '🔄' : ''}
+                          {event.reminderTiming && event.reminderTiming !== 'none' ? '🔔' : ''}
                           {event.title}
                         </span>
                       </div>
@@ -748,7 +786,6 @@ export default function CalendarView({
                           onClick={() => {
                             if (confirm(`确定要删除此项日程 "${event.title}" 吗？`)) {
                               onDeleteEvent(event.id);
-                              // Simple reactive update for UI
                               setTimeout(() => setIsDetailModalOpen(false), 50);
                             }
                           }}
@@ -777,6 +814,11 @@ export default function CalendarView({
                             🗓️ {event.date.substring(5)} 至 {event.endDate.substring(5)}
                           </span>
                         ) : null}
+                        {getReminderBadgeLabel(event.reminderTiming) && (
+                          <span className="bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded-lg shrink-0">
+                            {getReminderBadgeLabel(event.reminderTiming)}
+                          </span>
+                        )}
                         <span>{event.title}</span>
                       </h4>
                       {event.location && (
@@ -1053,6 +1095,57 @@ export default function CalendarView({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* 🔔 提醒功能设置 (铃声与通知提醒) */}
+          <div className="bg-[#FFF9F2] rounded-2xl border border-[#FFDAB9]/80 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-black text-[#6B4F4F] flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-[#FF91A4] fill-[#FF91A4]" />
+                <span>提醒功能（铃声与通知）</span>
+                {formReminderTiming !== 'none' && (
+                  <span className="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full font-black">
+                    已开启
+                  </span>
+                )}
+              </label>
+
+              <button
+                type="button"
+                onClick={() => playChime()}
+                className="text-[11px] font-bold text-[#FF91A4] hover:text-[#E07080] flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-[#FFDAB9] shadow-2xs hover:bg-rose-50 transition-all cursor-pointer active:scale-95"
+                title="试听兔兔温馨提醒铃声"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>试听铃声 🎵</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+              {REMINDER_OPTIONS.map((opt) => {
+                const isSelected = formReminderTiming === opt.value;
+                return (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    onClick={() => setFormReminderTiming(opt.value)}
+                    className={`px-1.5 py-2 rounded-xl border text-[11px] font-bold transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#FF91A4] text-white border-[#FF91A4] scale-102 shadow-xs font-black'
+                        : 'bg-white text-[#6B4F4F] border-[#FFDAB9] hover:bg-stone-50'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[10px] text-[#A68F8F] font-semibold pl-1">
+              {formReminderTiming === 'none'
+                ? '💡 当前未设置提醒（到达时间不发声）。'
+                : '🔔 设定时间到达时，本机会自动播放兔兔甜美铃声并弹出系统通知提醒！'}
+            </p>
           </div>
 
           <div>
