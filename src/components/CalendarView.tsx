@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { CalendarEvent, FamilyMember, ReminderTiming } from '../types';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check, MapPin, Bell, Volume2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, Calendar, Check, MapPin, Bell, Volume2, Smartphone } from 'lucide-react';
 import Modal from './Modal';
 import { playChime } from '../utils/audio';
+import { exportEventToCalendar } from '../utils/calendarExport';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -186,6 +187,8 @@ export default function CalendarView({
       isCurrentMonth: true,
     });
   }
+
+  // Today's date is dynamically computed at the component level (TODAY_STR)
 
   const getEventsForDate = (dateStr: string) => {
     return events.filter((e) => {
@@ -419,9 +422,8 @@ export default function CalendarView({
           </button>
           <button
             onClick={() => {
-              const now = new Date();
-              setCurrentYear(now.getFullYear());
-              setCurrentMonth(now.getMonth());
+              setCurrentYear(2026);
+              setCurrentMonth(6); // Reset to July 2026
             }}
             className="px-3 py-1 bg-pink-50 hover:bg-pink-100 border border-[#FFC1CC] text-[#FF91A4] text-xs font-bold rounded-xl cursor-pointer"
           >
@@ -505,6 +507,17 @@ export default function CalendarView({
 
                     {/* Quick actions for Today's Event */}
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => {
+                          exportEventToCalendar(event);
+                          playChime();
+                        }}
+                        className="px-1.5 py-0.5 rounded-md text-[#FF91A4] hover:bg-rose-50 border border-[#FFDAB9] text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                        title="同步到手机系统自带日历 (熄屏、锁屏也能大声响铃)"
+                      >
+                        <Smartphone className="w-3 h-3" />
+                        <span>存日历</span>
+                      </button>
                       <button
                         onClick={() => startEditEvent(event)}
                         className="p-1 rounded-md text-stone-500 hover:bg-stone-100 hover:text-[#6B4F4F]"
@@ -774,6 +787,17 @@ export default function CalendarView({
                       {/* Event actions */}
                       <div className="flex items-center gap-1.5 opacity-80 group-hover/item:opacity-100 transition-opacity">
                         <button
+                          onClick={() => {
+                            exportEventToCalendar(event);
+                            playChime();
+                          }}
+                          className="px-2 py-0.5 rounded-md text-[#FF91A4] hover:bg-rose-50 border border-[#FFDAB9] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          title="同步到手机系统自带日历 (熄屏、锁屏也能大声响铃)"
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>存日历</span>
+                        </button>
+                        <button
                           onClick={() => startEditEvent(event)}
                           className="p-1 rounded-md text-stone-500 hover:bg-stone-100 hover:text-[#6B4F4F]"
                           title="编辑日程"
@@ -786,6 +810,7 @@ export default function CalendarView({
                           onClick={() => {
                             if (confirm(`确定要删除此项日程 "${event.title}" 吗？`)) {
                               onDeleteEvent(event.id);
+                              // Simple reactive update for UI
                               setTimeout(() => setIsDetailModalOpen(false), 50);
                             }
                           }}
