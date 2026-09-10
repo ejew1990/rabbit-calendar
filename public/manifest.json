@@ -1,0 +1,16 @@
+{
+  "name": "兔兔家庭日历",
+  "short_name": "兔兔日历",
+  "description": "温暖可爱的家庭共享日历与待办清单",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF9F2",
+  "theme_color": "#FFC1CC",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
