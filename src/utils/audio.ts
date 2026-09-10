@@ -1,6 +1,6 @@
-// Web Audio API synthesized chimes and bells (zero external audio file dependencies)
-
+// Web Audio API synthesized chimes and bells
 let audioContext: AudioContext | null = null;
+let isUnlocked = false;
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -9,38 +9,56 @@ export function getAudioContext(): AudioContext | null {
   if (!audioContext) {
     audioContext = new AudioContextClass();
   }
-  if (audioContext.state === 'suspended') {
+  if (audioContext && audioContext.state === 'suspended') {
     audioContext.resume().catch(() => {});
   }
   return audioContext;
 }
 
-// Auto-unlock audio on user interaction
-if (typeof window !== 'undefined') {
-  const unlockAudio = () => {
-    if (audioContext && audioContext.state === 'suspended') {
-      audioContext.resume().catch(() => {});
+export function unlockAudio() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      if (!isUnlocked) {
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        isUnlocked = true;
+      }
     }
-  };
-  window.addEventListener('click', unlockAudio, { passive: true });
-  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  } catch (e) {}
 }
 
-/**
- * Play a cute synthesized bunny bell melody
- * Chime pattern: C6 -> E6 -> G6 -> C7 with warm harmonics
- */
-export function playChime(volume: number = 0.3) {
+if (typeof window !== 'undefined') {
+  ['touchstart', 'touchend', 'click', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, unlockAudio, { passive: true });
+  });
+}
+
+export function playChime(volume: number = 0.5) {
   try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([200, 100, 200]);
+      } catch (e) {}
+    }
+
     const ctx = getAudioContext();
     if (!ctx) return;
 
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
     const playTone = (freq: number, start: number, duration: number, gainVal: number) => {
-      // Fundamental oscillator
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      // Soft sine tone with a gentle attack and bell decay
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, start);
 
@@ -54,14 +72,13 @@ export function playChime(volume: number = 0.3) {
       osc.start(start);
       osc.stop(start + duration);
 
-      // Add gentle harmonic sparkle (2nd harmonic)
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'triangle';
       osc2.frequency.setValueAtTime(freq * 2, start);
 
       gain2.gain.setValueAtTime(0, start);
-      gain2.gain.linearRampToValueAtTime(gainVal * 0.25 * volume, start + 0.02);
+      gain2.gain.linearRampToValueAtTime(gainVal * 0.3 * volume, start + 0.02);
       gain2.gain.exponentialRampToValueAtTime(0.0001, start + duration * 0.6);
 
       osc2.connect(gain2);
@@ -72,11 +89,10 @@ export function playChime(volume: number = 0.3) {
     };
 
     const now = ctx.currentTime;
-    // Pleasant celesta/doorbell progression: G5 (784Hz) -> C6 (1046Hz) -> E6 (1318Hz) -> G6 (1568Hz)
-    playTone(783.99, now, 0.45, 0.22);
-    playTone(1046.50, now + 0.12, 0.45, 0.26);
-    playTone(1318.51, now + 0.24, 0.50, 0.28);
-    playTone(1567.98, now + 0.36, 0.75, 0.30);
+    playTone(783.99, now, 0.45, 0.35);         // G5
+    playTone(1046.50, now + 0.13, 0.45, 0.40);  // C6
+    playTone(1318.51, now + 0.26, 0.50, 0.45);  // E6
+    playTone(1567.98, now + 0.39, 0.85, 0.50);  // G6
   } catch (error) {
     console.error('Failed to play audio chime:', error);
   }
